@@ -1,0 +1,153 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "KDE Connect instellen",
+        "description": "Home Assistant heeft de bestanden van de oudere KDE Connect-integratie gevonden. Je kunt de koppelingen overnemen, zodat je apparaten gekoppeld blijven.",
+        "menu_options": {
+          "import_legacy": "Bestaande koppelingen overnemen",
+          "identity": "Opnieuw beginnen"
+        }
+      },
+      "identity": {
+        "title": "KDE Connect instellen",
+        "description": "Home Assistant verschijnt als KDE Connect-apparaat op je netwerk. Koppel daarna je computers en telefoons vanaf de integratiepagina.",
+        "data": {
+          "name": "Naam"
+        },
+        "data_description": {
+          "name": "De naam die je apparaten voor Home Assistant tonen."
+        }
+      },
+      "import_legacy": {
+        "title": "Bestaande koppelingen overnemen",
+        "description": "Deze apparaten blijven gekoppeld: {devices}.\n\nVerwijder de oudere KDE Connect-integratie voordat je verdergaat. Beide gebruiken dezelfde netwerkpoorten, dus er kan er maar één tegelijk draaien.",
+        "data": {
+          "name": "Naam"
+        },
+        "data_description": {
+          "name": "De naam die je apparaten voor Home Assistant tonen."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "KDE Connect is al ingesteld. Open de integratie en kies **Apparaat koppelen** om een apparaat te koppelen.",
+      "import_failed": "De bestanden van de oudere integratie konden niet worden gelezen. Kies in plaats daarvan **Opnieuw beginnen**."
+    },
+    "error": {
+      "legacy_running": "Verwijder eerst de oudere KDE Connect-integratie en probeer het daarna opnieuw."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "initiate_flow": {
+        "user": "Apparaat koppelen",
+        "reconfigure": "Apparaatinstellingen wijzigen"
+      },
+      "entry_type": "Apparaat",
+      "step": {
+        "pick": {
+          "title": "Kies een apparaat",
+          "description": "{count} niet-gekoppelde apparaten gevonden. Zorg dat KDE Connect op het apparaat draait en dat het op hetzelfde netwerk zit als Home Assistant.",
+          "data": {
+            "device": "Apparaat"
+          }
+        },
+        "manual": {
+          "title": "Adres invoeren",
+          "description": "Gebruik dit als het apparaat niet automatisch wordt gevonden, bijvoorbeeld omdat het op een ander netwerk zit.",
+          "data": {
+            "host": "Host"
+          },
+          "data_description": {
+            "host": "Het IP-adres of de hostnaam van het apparaat."
+          }
+        },
+        "reconfigure": {
+          "title": "{name}",
+          "data": {
+            "mac": "MAC-adres",
+            "scripts": "Scripts die het apparaat mag uitvoeren"
+          },
+          "data_description": {
+            "mac": "Nodig om het apparaat aan te zetten met Wake-on-LAN. Laat leeg om de knop Aanzetten te verbergen.",
+            "scripts": "Deze scripts verschijnen onder Opdracht uitvoeren in KDE Connect op het apparaat."
+          }
+        }
+      },
+      "progress": {
+        "discover": "Zoeken naar KDE Connect-apparaten op je netwerk.",
+        "connect": "Wachten tot het apparaat verbinding maakt met Home Assistant.",
+        "pair": "Accepteer binnen 30 seconden het koppelverzoek op **{name}**. Zie je geen melding, open dan KDE Connect op het apparaat en kies **Accepteren**.\n\nVerificatiesleutel: **{key}**"
+      },
+      "abort": {
+        "already_configured": "Dit apparaat is al gekoppeld.",
+        "not_loaded": "KDE Connect draait niet. Bekijk de integratiepagina voor fouten en probeer het opnieuw.",
+        "cannot_connect": "Het apparaat heeft geen verbinding gemaakt met Home Assistant. Controleer of KDE Connect op het apparaat draait en of het apparaat Home Assistant kan bereiken op TCP-poort 1716 tot 1764.",
+        "pair_timeout": "Het koppelverzoek is niet op tijd geaccepteerd. Probeer het opnieuw en accepteer het op het apparaat.",
+        "pair_rejected": "Het apparaat heeft het koppelverzoek geweigerd.",
+        "reconfigure_successful": "De instellingen zijn opgeslagen."
+      },
+      "error": {
+        "invalid_mac": "Voer een MAC-adres in zoals 00:11:22:33:44:55."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "KDE Connect-opties",
+        "data": {
+          "name": "Naam"
+        },
+        "data_description": {
+          "name": "De naam die je apparaten voor Home Assistant tonen."
+        }
+      }
+    }
+  },
+  "selector": {
+    "device": {
+      "options": {
+        "manual": "Zelf een adres invoeren"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Verbonden"
+      }
+    },
+    "button": {
+      "ring": {
+        "name": "Laten rinkelen"
+      },
+      "wake": {
+        "name": "Aanzetten"
+      },
+      "run_command": {
+        "name": "Opdracht uitvoeren"
+      }
+    },
+    "lock": {
+      "screen": {
+        "name": "Scherm"
+      }
+    }
+  },
+  "exceptions": {
+    "not_connected": {
+      "message": "{name} is niet verbonden met Home Assistant."
+    },
+    "port_in_use": {
+      "message": "De KDE Connect-netwerkpoorten konden niet worden geopend ({error}). Is de oudere KDE Connect-integratie nog geïnstalleerd, verwijder die dan en herstart Home Assistant."
+    }
+  },
+  "issues": {
+    "device_unpaired": {
+      "title": "{name} is niet meer gekoppeld",
+      "description": "{name} heeft de koppeling met Home Assistant verwijderd, waardoor Home Assistant het apparaat niet meer kan bedienen.\n\nVerwijder het apparaat uit de KDE Connect-integratie en koppel het opnieuw om dit op te lossen."
+    }
+  }
+}

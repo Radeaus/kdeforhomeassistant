@@ -1,0 +1,23 @@
+{
+  "entity": {
+    "button": {
+      "ring": {
+        "default": "mdi:bell-ring"
+      },
+      "wake": {
+        "default": "mdi:power"
+      },
+      "run_command": {
+        "default": "mdi:console"
+      }
+    },
+    "lock": {
+      "screen": {
+        "default": "mdi:monitor-lock",
+        "state": {
+          "unlocked": "mdi:monitor"
+        }
+      }
+    }
+  }
+}

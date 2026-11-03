@@ -1,0 +1,153 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up KDE Connect",
+        "description": "Home Assistant found the files of the older KDE Connect integration. You can take over its pairings, so your devices stay paired.",
+        "menu_options": {
+          "import_legacy": "Take over existing pairings",
+          "identity": "Start fresh"
+        }
+      },
+      "identity": {
+        "title": "Set up KDE Connect",
+        "description": "Home Assistant shows up as a KDE Connect device on your network. After this step, pair your computers and phones from the integration page.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "The name your devices show for Home Assistant."
+        }
+      },
+      "import_legacy": {
+        "title": "Take over existing pairings",
+        "description": "These devices stay paired: {devices}.\n\nRemove the older KDE Connect integration before you continue. Both use the same network ports, so only one of them can run.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "The name your devices show for Home Assistant."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "KDE Connect is already set up. To pair a device, open the integration and select **Pair device**.",
+      "import_failed": "The files of the older integration could not be read. Choose **Start fresh** instead."
+    },
+    "error": {
+      "legacy_running": "Remove the older KDE Connect integration first, then try again."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "initiate_flow": {
+        "user": "Pair device",
+        "reconfigure": "Change device settings"
+      },
+      "entry_type": "Device",
+      "step": {
+        "pick": {
+          "title": "Choose a device",
+          "description": "Found {count} unpaired devices. Make sure KDE Connect is running on the device and that it is on the same network as Home Assistant.",
+          "data": {
+            "device": "Device"
+          }
+        },
+        "manual": {
+          "title": "Enter the address",
+          "description": "Use this when the device is not found automatically, for example when it is on another network.",
+          "data": {
+            "host": "Host"
+          },
+          "data_description": {
+            "host": "The IP address or hostname of the device."
+          }
+        },
+        "reconfigure": {
+          "title": "{name}",
+          "data": {
+            "mac": "MAC address",
+            "scripts": "Scripts the device can run"
+          },
+          "data_description": {
+            "mac": "Needed to turn the device on with Wake-on-LAN. Leave empty to hide the wake up button.",
+            "scripts": "These scripts show up under Run command in KDE Connect on the device."
+          }
+        }
+      },
+      "progress": {
+        "discover": "Looking for KDE Connect devices on your network.",
+        "connect": "Waiting for the device to connect to Home Assistant.",
+        "pair": "Accept the pairing request on **{name}** within 30 seconds. If no notification appears, open KDE Connect on the device and select **Accept**.\n\nVerification key: **{key}**"
+      },
+      "abort": {
+        "already_configured": "This device is already paired.",
+        "not_loaded": "KDE Connect is not running. Check the integration page for errors and try again.",
+        "cannot_connect": "The device did not connect to Home Assistant. Check that KDE Connect is running on the device and that the device can reach Home Assistant on TCP ports 1716 to 1764.",
+        "pair_timeout": "The pairing request was not accepted in time. Try again and accept it on the device.",
+        "pair_rejected": "The device declined the pairing request.",
+        "reconfigure_successful": "The settings are saved."
+      },
+      "error": {
+        "invalid_mac": "Enter a MAC address like 00:11:22:33:44:55."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "KDE Connect options",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "The name your devices show for Home Assistant."
+        }
+      }
+    }
+  },
+  "selector": {
+    "device": {
+      "options": {
+        "manual": "Enter the address myself"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Connected"
+      }
+    },
+    "button": {
+      "ring": {
+        "name": "Ring"
+      },
+      "wake": {
+        "name": "Wake up"
+      },
+      "run_command": {
+        "name": "Run command"
+      }
+    },
+    "lock": {
+      "screen": {
+        "name": "Screen"
+      }
+    }
+  },
+  "exceptions": {
+    "not_connected": {
+      "message": "{name} is not connected to Home Assistant."
+    },
+    "port_in_use": {
+      "message": "Could not open the KDE Connect network ports ({error}). If the older KDE Connect integration is still installed, remove it and restart Home Assistant."
+    }
+  },
+  "issues": {
+    "device_unpaired": {
+      "title": "{name} is no longer paired",
+      "description": "{name} removed its pairing with Home Assistant, so Home Assistant can no longer control it.\n\nTo fix this, delete the device from the KDE Connect integration and pair it again."
+    }
+  }
+}
