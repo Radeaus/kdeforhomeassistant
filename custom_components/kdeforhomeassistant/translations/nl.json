@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "KDE Connect instellen",
+        "title": "KDE for Home Assistant instellen",
         "description": "Home Assistant heeft de bestanden van de oudere KDE Connect-integratie gevonden. Je kunt de koppelingen overnemen, zodat je apparaten gekoppeld blijven.",
         "menu_options": {
           "import_legacy": "Bestaande koppelingen overnemen",
@@ -10,7 +10,7 @@
         }
       },
       "identity": {
-        "title": "KDE Connect instellen",
+        "title": "KDE for Home Assistant instellen",
         "description": "Home Assistant verschijnt als KDE Connect-apparaat op je netwerk. Koppel daarna je computers en telefoons vanaf de integratiepagina.",
         "data": {
           "name": "Naam"
@@ -31,7 +31,7 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "KDE Connect is al ingesteld. Open de integratie en kies **Apparaat koppelen** om een apparaat te koppelen.",
+      "single_instance_allowed": "KDE for Home Assistant is al ingesteld. Open de integratie en kies **Apparaat koppelen** om een apparaat te koppelen.",
       "import_failed": "De bestanden van de oudere integratie konden niet worden gelezen. Kies in plaats daarvan **Opnieuw beginnen**."
     },
     "error": {
@@ -82,7 +82,7 @@
       },
       "abort": {
         "already_configured": "Dit apparaat is al gekoppeld.",
-        "not_loaded": "KDE Connect draait niet. Bekijk de integratiepagina voor fouten en probeer het opnieuw.",
+        "not_loaded": "KDE for Home Assistant draait niet. Bekijk de integratiepagina voor fouten en probeer het opnieuw.",
         "cannot_connect": "Het apparaat heeft geen verbinding gemaakt met Home Assistant. Controleer of KDE Connect op het apparaat draait en of het apparaat Home Assistant kan bereiken op TCP-poort 1716 tot 1764.",
         "pair_timeout": "Het koppelverzoek is niet op tijd geaccepteerd. Probeer het opnieuw en accepteer het op het apparaat.",
         "pair_rejected": "Het apparaat heeft het koppelverzoek geweigerd.",
@@ -96,7 +96,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "KDE Connect-opties",
+        "title": "Opties voor KDE for Home Assistant",
         "data": {
           "name": "Naam"
         },
@@ -147,7 +147,7 @@
   "issues": {
     "device_unpaired": {
       "title": "{name} is niet meer gekoppeld",
-      "description": "{name} heeft de koppeling met Home Assistant verwijderd, waardoor Home Assistant het apparaat niet meer kan bedienen.\n\nVerwijder het apparaat uit de KDE Connect-integratie en koppel het opnieuw om dit op te lossen."
+      "description": "{name} heeft de koppeling met Home Assistant verwijderd, waardoor Home Assistant het apparaat niet meer kan bedienen.\n\nVerwijder het apparaat uit de integratie KDE for Home Assistant en koppel het opnieuw om dit op te lossen."
     }
   }
 }

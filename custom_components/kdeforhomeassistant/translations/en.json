@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Set up KDE Connect",
+        "title": "Set up KDE for Home Assistant",
         "description": "Home Assistant found the files of the older KDE Connect integration. You can take over its pairings, so your devices stay paired.",
         "menu_options": {
           "import_legacy": "Take over existing pairings",
@@ -10,7 +10,7 @@
         }
       },
       "identity": {
-        "title": "Set up KDE Connect",
+        "title": "Set up KDE for Home Assistant",
         "description": "Home Assistant shows up as a KDE Connect device on your network. After this step, pair your computers and phones from the integration page.",
         "data": {
           "name": "Name"
@@ -31,7 +31,7 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "KDE Connect is already set up. To pair a device, open the integration and select **Pair device**.",
+      "single_instance_allowed": "KDE for Home Assistant is already set up. To pair a device, open the integration and select **Pair device**.",
       "import_failed": "The files of the older integration could not be read. Choose **Start fresh** instead."
     },
     "error": {
@@ -82,7 +82,7 @@
       },
       "abort": {
         "already_configured": "This device is already paired.",
-        "not_loaded": "KDE Connect is not running. Check the integration page for errors and try again.",
+        "not_loaded": "KDE for Home Assistant is not running. Check the integration page for errors and try again.",
         "cannot_connect": "The device did not connect to Home Assistant. Check that KDE Connect is running on the device and that the device can reach Home Assistant on TCP ports 1716 to 1764.",
         "pair_timeout": "The pairing request was not accepted in time. Try again and accept it on the device.",
         "pair_rejected": "The device declined the pairing request.",
@@ -96,7 +96,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "KDE Connect options",
+        "title": "KDE for Home Assistant options",
         "data": {
           "name": "Name"
         },
@@ -147,7 +147,7 @@
   "issues": {
     "device_unpaired": {
       "title": "{name} is no longer paired",
-      "description": "{name} removed its pairing with Home Assistant, so Home Assistant can no longer control it.\n\nTo fix this, delete the device from the KDE Connect integration and pair it again."
+      "description": "{name} removed its pairing with Home Assistant, so Home Assistant can no longer control it.\n\nTo fix this, delete the device from the KDE for Home Assistant integration and pair it again."
     }
   }
 }

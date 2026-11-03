@@ -1,60 +1,46 @@
-# KDE Connect for Home Assistant
+# KDE for Home Assistant
 
-Control your computers and phones from Home Assistant with [KDE Connect](https://kdeconnect.kde.org/). Home Assistant shows up as a regular KDE Connect device on your network, so there is nothing extra to install on your devices.
+A Home Assistant integration that speaks the [KDE Connect](https://kdeconnect.kde.org/) protocol. Home Assistant joins your network as a regular KDE Connect device, so your PCs and phones only need the normal KDE Connect app.
 
-Everything is set up in the Home Assistant UI: no YAML, no SSH.
+## Entities
 
-## What you get
+Per paired device:
 
-For every paired device:
-
-| Entity | What it does |
+| Entity | |
 | --- | --- |
-| **Connected** (binary sensor) | Whether the device is connected to Home Assistant. |
-| **Screen** (lock) | Lock or unlock the screen, and see whether it is locked. |
-| **Notify** | Show a notification on the device. |
-| **Ring** (button) | Play the find-my-device sound. |
-| **Wake up** (button) | Turn the device on with Wake-on-LAN. Shows up once a MAC address is known. |
-| **Run command** (one button per command) | Run the commands you set up under *Run command* in KDE Connect on the device. |
+| `binary_sensor` Connected | Device is connected |
+| `lock` Screen | Lock/unlock the screen, shows lock state |
+| `notify` | Send a notification |
+| `button` Ring | Find-my-device sound |
+| `button` Wake up | Wake-on-LAN (needs a MAC address) |
+| `button` per run command | Runs the commands configured in KDE Connect on the device |
 
-It also works the other way around: share Home Assistant scripts with a device, and they show up under *Run command* in KDE Connect on that device.
+Home Assistant scripts can also be shared with a device. They then show up under *Run command* in KDE Connect.
 
-## Installation
+## Install
 
-### HACS
+**HACS:** add `https://github.com/Radeaus/kdeforhomeassistant` as a custom repository (type *Integration*), install **KDE for Home Assistant**, restart.
 
-1. In HACS, open the menu and choose **Custom repositories**.
-2. Add `https://github.com/Radeaus/kdeforhomeassistant` with the type **Integration**.
-3. Install **KDE Connect** and restart Home Assistant.
-
-### Manually
-
-Copy `custom_components/kdeforhomeassistant` into the `custom_components` folder of your Home Assistant configuration and restart Home Assistant.
+**Manual:** copy `custom_components/kdeforhomeassistant` into your `custom_components` folder and restart.
 
 ## Setup
 
-1. Go to **Settings** > **Devices & services** > **Add integration** and choose **KDE Connect**.
-2. Choose the name your devices will see for Home Assistant.
-3. On the integration page, select **Pair device**. Home Assistant looks for KDE Connect devices on your network.
-4. Pick your device and accept the pairing request on it within 30 seconds. Both sides show the same verification key.
+1. **Settings > Devices & services > Add integration > KDE for Home Assistant**, pick a name.
+2. On the integration page, click **Pair device** and select your device (or enter its IP).
+3. Accept the request on the device within 30 seconds.
 
-To change a device's settings, open the integration, find the device and select the settings icon. There you can:
+Device settings (gear icon on the device) let you set the MAC address for Wake-on-LAN and choose which scripts the device may run.
 
-- set the **MAC address** for Wake-on-LAN (filled in automatically when Home Assistant can find it);
-- choose the **scripts** the device may run.
-
-### Moving from the older KDE Connect integration
-
-If the older [bartv2/kde_connect](https://github.com/bartv2/kde_connect) integration was installed, setup offers to **take over its pairings**. Your devices stay paired and you don't need to accept anything again. Remove the older integration first: both use the same network ports.
+Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Setup can take over its pairings. Remove that integration first, since both need the same ports.
 
 ## Requirements
 
-- KDE Connect 23.08 or newer on your devices (protocol 7 and 8 are supported).
-- The devices and Home Assistant are on the same network, or the device can reach Home Assistant directly. KDE Connect uses UDP port 1716 for discovery and TCP ports 1716 to 1764 for the connection.
+- KDE Connect 23.08+ (protocol 7 or 8)
+- UDP 1716 and TCP 1716–1764 reachable between Home Assistant and the device
 
-## Examples
+## Example
 
-Turn on the computer, wait until it is connected, then unlock it:
+Wake a PC, wait for it to connect, unlock it:
 
 ```yaml
 sequence:
@@ -70,12 +56,6 @@ sequence:
     target:
       entity_id: lock.my_pc_screen
 ```
-
-## Troubleshooting
-
-- **Pair device finds nothing**: make sure KDE Connect is running and the device is on the same network. Use **Enter the address myself** to reach it by IP address.
-- **Could not open the KDE Connect network ports**: another KDE Connect integration is still running. Remove it and restart Home Assistant.
-- Diagnostics can be downloaded from the integration page. They contain no keys or certificates.
 
 ## License
 

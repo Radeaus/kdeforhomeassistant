@@ -1,4 +1,4 @@
-"""The KDE Connect integration."""
+"""The KDE for Home Assistant integration."""
 
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -
     @callback
     def pair_request(info: DeviceInfo) -> None:
         _LOGGER.info(
-            "%s asked to pair; add it from the KDE Connect integration in Home Assistant",
+            "%s asked to pair; add it from the KDE for Home Assistant integration",
             info.name,
         )
 

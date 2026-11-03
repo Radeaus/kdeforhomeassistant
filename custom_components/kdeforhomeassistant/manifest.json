@@ -1,6 +1,6 @@
 {
   "domain": "kdeforhomeassistant",
-  "name": "KDE Connect",
+  "name": "KDE for Home Assistant",
   "codeowners": ["@Radeaus"],
   "config_flow": true,
   "dependencies": ["network"],
@@ -11,5 +11,5 @@
   "loggers": ["custom_components.kdeforhomeassistant"],
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
