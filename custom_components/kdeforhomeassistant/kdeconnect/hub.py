@@ -237,6 +237,18 @@ class PendingPairing:
         return self._link.info, self._link.certificate_der
 
 
+class IncomingPairing:
+    """A pairing request a device sent us, waiting for the user to answer."""
+
+    def __init__(
+        self, info: DeviceInfo, certificate_der: bytes, key: str
+    ) -> None:
+        self.info = info
+        self.certificate_der = certificate_der
+        self.verification_key = key
+        self.timeout: asyncio.TimerHandle | None = None
+
+
 class KdeConnectHub:
     """Keeps the sockets and the links to all devices."""
 
@@ -259,13 +271,14 @@ class KdeConnectHub:
         self._trusted: dict[str, bytes] = {}
         self._links: dict[str, Link] = {}
         self._pairings: dict[str, PendingPairing] = {}
+        self.incoming: dict[str, IncomingPairing] = {}
         self._answered: dict[str, float] = {}
         self._packet_listeners: dict[str, list[PacketListener]] = {}
         self._connection_listeners: dict[str, list[ConnectionListener]] = {}
         self._discovery_listeners: list[Callable[[], None]] = []
         self._discovering = 0
         self.discovered: dict[str, DeviceInfo] = {}
-        self.on_pair_request: Callable[[DeviceInfo], None] | None = None
+        self.on_pair_request: Callable[[], None] | None = None
         self.on_unpaired: Callable[[str], None] | None = None
 
     async def start(self) -> None:
@@ -437,6 +450,7 @@ class KdeConnectHub:
         _LOGGER.debug("%s disconnected", link.info.name)
         if (pairing := self._pairings.get(device_id)) and not pairing.future.done():
             pairing.future.set_exception(PairingError("not_connected"))
+        self._drop_incoming(device_id)
         if device_id in self._trusted:
             self._notify_connection(device_id, False)
         self._notify_discovery()
@@ -449,7 +463,7 @@ class KdeConnectHub:
             self._handle_pair(link, packet)
             return
         if device_id not in self._trusted:
-            if device_id not in self._pairings:
+            if device_id not in self._pairings and device_id not in self.incoming:
                 link.send(Packet(PACKET_TYPE_PAIR, {"pair": False}))
             return
         for listener in list(self._packet_listeners.get(device_id, ())):
@@ -477,15 +491,77 @@ class KdeConnectHub:
                 # The device forgot us but we still trust its certificate.
                 link.send(Packet(PACKET_TYPE_PAIR, {"pair": True}))
             else:
-                link.send(Packet(PACKET_TYPE_PAIR, {"pair": False}))
-                if self.on_pair_request:
-                    self.on_pair_request(link.info)
+                self._add_incoming(link, packet)
             return
         if pairing is not None:
             if not pairing.future.done():
                 pairing.future.set_result(False)
+        elif device_id in self.incoming:
+            self._drop_incoming(device_id)
         elif device_id in self._trusted and self.on_unpaired:
             self.on_unpaired(device_id)
+
+    # Pairing requests from devices
+
+    def _add_incoming(self, link: Link, packet: Packet) -> None:
+        """Keep a pairing request open until the user answers or it expires."""
+        assert link.info is not None and link.certificate_der is not None
+        device_id = link.info.device_id
+        timestamp = packet.body.get("timestamp")
+        if link.info.protocol_version >= 8 and not isinstance(timestamp, int):
+            link.send(Packet(PACKET_TYPE_PAIR, {"pair": False}))
+            return
+        self._drop_incoming(device_id, notify=False)
+        key = verification_key(
+            self.identity.certificate_der,
+            link.certificate_der,
+            timestamp if link.info.protocol_version >= 8 else None,
+        )
+        request = IncomingPairing(link.info, link.certificate_der, key)
+        request.timeout = asyncio.get_running_loop().call_later(
+            PAIR_TIMEOUT, self._expire_incoming, device_id, request
+        )
+        self.incoming[device_id] = request
+        _LOGGER.debug("%s asked to pair", link.info.name)
+        self._notify_pair_request()
+
+    def _expire_incoming(self, device_id: str, request: IncomingPairing) -> None:
+        if self.incoming.get(device_id) is request:
+            self.decline_incoming(device_id)
+
+    def _drop_incoming(self, device_id: str, *, notify: bool = True) -> None:
+        request = self.incoming.pop(device_id, None)
+        if request is None:
+            return
+        if request.timeout:
+            request.timeout.cancel()
+        if notify:
+            self._notify_pair_request()
+
+    def _notify_pair_request(self) -> None:
+        if self.on_pair_request:
+            self.on_pair_request()
+
+    def accept_incoming(self, device_id: str) -> tuple[DeviceInfo, bytes]:
+        """Accept a pairing request and trust the device from now on."""
+        request = self.incoming.get(device_id)
+        link = self._links.get(device_id)
+        if request is None or link is None:
+            raise PairingError("not_connected")
+        self._drop_incoming(device_id)
+        if not link.send(Packet(PACKET_TYPE_PAIR, {"pair": True})):
+            raise PairingError("not_connected")
+        self._trusted[device_id] = request.certificate_der
+        self._notify_connection(device_id, True)
+        return request.info, request.certificate_der
+
+    def decline_incoming(self, device_id: str) -> None:
+        """Turn down a pairing request."""
+        if device_id not in self.incoming:
+            return
+        self._drop_incoming(device_id)
+        if link := self._links.get(device_id):
+            link.send(Packet(PACKET_TYPE_PAIR, {"pair": False}))
 
     # Pairing and trust
 

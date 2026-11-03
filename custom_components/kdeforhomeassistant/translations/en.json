@@ -9,16 +9,6 @@
           "identity": "Start fresh"
         }
       },
-      "identity": {
-        "title": "Set up KDE for Home Assistant",
-        "description": "Home Assistant shows up as a KDE Connect device on your network. After this step, pair your computers and phones from the integration page.",
-        "data": {
-          "name": "Name"
-        },
-        "data_description": {
-          "name": "The name your devices show for Home Assistant."
-        }
-      },
       "import_legacy": {
         "title": "Take over existing pairings",
         "description": "These devices stay paired: {devices}.\n\nRemove the older KDE Connect integration before you continue. Both use the same network ports, so only one of them can run.",
@@ -31,11 +21,14 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "KDE for Home Assistant is already set up. To pair a device, open the integration and select **Pair device**.",
+      "single_instance_allowed": "KDE for Home Assistant is already set up. Open **KDE for Home Assistant** in the sidebar to add a device.",
       "import_failed": "The files of the older integration could not be read. Choose **Start fresh** instead."
     },
     "error": {
       "legacy_running": "Remove the older KDE Connect integration first, then try again."
+    },
+    "create_entry": {
+      "default": "Home Assistant now shows up as a KDE Connect device on your network. [Open KDE for Home Assistant in the sidebar](/{path}) to add your computers and phones step by step."
     }
   },
   "config_subentries": {

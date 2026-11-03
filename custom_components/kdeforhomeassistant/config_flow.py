@@ -1,4 +1,4 @@
-"""Config flow for KDE Connect."""
+"""Config flow for KDE for Home Assistant."""
 
 from __future__ import annotations
 
@@ -49,7 +49,9 @@ from .const import (
     DOMAIN,
     LEGACY_CONFIG_DIR,
     LEGACY_DOMAIN,
+    PANEL_URL_PATH,
     SUBENTRY_TYPE_DEVICE,
+    default_name,
 )
 from .device import read_mac_address
 from .kdeconnect import (
@@ -106,25 +108,18 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_identity(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Choose the name other devices see."""
-        if user_input is not None:
-            name = filter_device_name(user_input[CONF_NAME]) or DEFAULT_NAME
-            identity = await self.hass.async_add_executor_job(generate_identity, name)
-            return self.async_create_entry(
-                title=name,
-                data={
-                    CONF_DEVICE_ID: identity.device_id,
-                    CONF_CERTIFICATE: identity.certificate_pem,
-                    CONF_PRIVATE_KEY: identity.private_key_pem,
-                },
-                options={CONF_NAME: name},
-            )
-        default = filter_device_name(self.hass.config.location_name) or DEFAULT_NAME
-        return self.async_show_form(
-            step_id="identity",
-            data_schema=vol.Schema(
-                {vol.Required(CONF_NAME, default=default): TextSelector()}
-            ),
+        """Create our identity; naming and pairing happen on the panel."""
+        name = default_name(self.hass.config.location_name)
+        identity = await self.hass.async_add_executor_job(generate_identity, name)
+        return self.async_create_entry(
+            title=name,
+            data={
+                CONF_DEVICE_ID: identity.device_id,
+                CONF_CERTIFICATE: identity.certificate_pem,
+                CONF_PRIVATE_KEY: identity.private_key_pem,
+            },
+            options={CONF_NAME: name},
+            description_placeholders={"path": PANEL_URL_PATH},
         )
 
     async def async_step_import_legacy(
@@ -153,6 +148,7 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_PRIVATE_KEY: legacy["private_key"],
                     },
                     options={CONF_NAME: name},
+                    description_placeholders={"path": PANEL_URL_PATH},
                     subentries=[
                         ConfigSubentryData(
                             data=device,
@@ -169,7 +165,7 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                 for entry in legacy_entries
                 if entry.data.get("name")
             ),
-            DEFAULT_NAME,
+            default_name(self.hass.config.location_name),
         )
         names = ", ".join(device[CONF_NAME] for device in legacy["devices"]) or "-"
         return self.async_show_form(

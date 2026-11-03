@@ -25,11 +25,12 @@ Home Assistant scripts can also be shared with a device. They then show up under
 
 ## Setup
 
-1. **Settings > Devices & services > Add integration > KDE for Home Assistant**, pick a name.
-2. On the integration page, click **Pair device** and select your device (or enter its IP).
-3. Accept the request on the device within 30 seconds.
+1. **Settings > Devices & services > Add integration > KDE for Home Assistant**. Home Assistant shows up on your network as "*your home name* - Home Assistant".
+2. Open **KDE for Home Assistant** in the sidebar. A wizard takes you through it step by step: name, open KDE Connect, choose your device, accept the pairing request, then choose buttons, scripts and Wake-on-LAN.
 
-Device settings (gear icon on the device) let you set the MAC address for Wake-on-LAN and choose which scripts the device may run.
+You can also select **Pair** in KDE Connect on the device itself. Home Assistant then shows the request in the sidebar page and as a notification; accept it within 30 seconds.
+
+The sidebar page also lets you manage each device: run its commands, add new commands on the device, share scripts, set the MAC address for Wake-on-LAN, and remove it.
 
 Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Setup can take over its pairings. Remove that integration first, since both need the same ports.
 

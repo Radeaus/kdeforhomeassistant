@@ -1,15 +1,28 @@
 {
   "domain": "kdeforhomeassistant",
   "name": "KDE for Home Assistant",
-  "codeowners": ["@Radeaus"],
+  "after_dependencies": [
+    "frontend",
+    "panel_custom",
+    "persistent_notification"
+  ],
+  "codeowners": [
+    "@Radeaus"
+  ],
   "config_flow": true,
-  "dependencies": ["network"],
+  "dependencies": [
+    "http",
+    "network",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/Radeaus/kdeforhomeassistant",
   "integration_type": "hub",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Radeaus/kdeforhomeassistant/issues",
-  "loggers": ["custom_components.kdeforhomeassistant"],
+  "loggers": [
+    "custom_components.kdeforhomeassistant"
+  ],
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.1.1"
+  "version": "0.2.0"
 }

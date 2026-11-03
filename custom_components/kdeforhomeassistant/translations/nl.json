@@ -9,16 +9,6 @@
           "identity": "Opnieuw beginnen"
         }
       },
-      "identity": {
-        "title": "KDE for Home Assistant instellen",
-        "description": "Home Assistant verschijnt als KDE Connect-apparaat op je netwerk. Koppel daarna je computers en telefoons vanaf de integratiepagina.",
-        "data": {
-          "name": "Naam"
-        },
-        "data_description": {
-          "name": "De naam die je apparaten voor Home Assistant tonen."
-        }
-      },
       "import_legacy": {
         "title": "Bestaande koppelingen overnemen",
         "description": "Deze apparaten blijven gekoppeld: {devices}.\n\nVerwijder de oudere KDE Connect-integratie voordat je verdergaat. Beide gebruiken dezelfde netwerkpoorten, dus er kan er maar één tegelijk draaien.",
@@ -31,11 +21,14 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "KDE for Home Assistant is al ingesteld. Open de integratie en kies **Apparaat koppelen** om een apparaat te koppelen.",
+      "single_instance_allowed": "KDE for Home Assistant is al ingesteld. Open **KDE for Home Assistant** in de zijbalk om een apparaat toe te voegen.",
       "import_failed": "De bestanden van de oudere integratie konden niet worden gelezen. Kies in plaats daarvan **Opnieuw beginnen**."
     },
     "error": {
       "legacy_running": "Verwijder eerst de oudere KDE Connect-integratie en probeer het daarna opnieuw."
+    },
+    "create_entry": {
+      "default": "Home Assistant verschijnt nu als KDE Connect-apparaat op je netwerk. [Open KDE for Home Assistant in de zijbalk](/{path}) om stap voor stap je computers en telefoons toe te voegen."
     }
   },
   "config_subentries": {

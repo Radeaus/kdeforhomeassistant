@@ -27,15 +27,12 @@ from .fake_device import FakeDevice
 
 
 async def _setup(hass: HomeAssistant):
+    hass.config.location_name = "Test"
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "user"}
     )
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "identity"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_NAME: "Test HA"}
-    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Test - Home Assistant"
     await hass.async_block_till_done()
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert entry.state is ConfigEntryState.LOADED

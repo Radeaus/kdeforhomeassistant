@@ -1,4 +1,4 @@
-"""Constants for the KDE Connect integration."""
+"""Constants for the KDE for Home Assistant integration."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from .kdeconnect.protocol import (
     PACKET_TYPE_PING,
     PACKET_TYPE_RUNCOMMAND,
     PACKET_TYPE_RUNCOMMAND_REQUEST,
+    filter_device_name,
 )
 
 DOMAIN: Final = "kdeforhomeassistant"
@@ -30,6 +31,13 @@ CONF_CAPABILITIES: Final = "capabilities"
 CONF_SCRIPTS: Final = "scripts"
 
 DEFAULT_NAME: Final = "Home Assistant"
+NAME_SUFFIX: Final = " - Home Assistant"
+
+PANEL_URL_PATH: Final = "kde-for-home-assistant"
+PANEL_ELEMENT: Final = "kde-for-home-assistant-panel"
+PANEL_STATIC_URL: Final = "/kdeforhomeassistant_static"
+SIGNAL_UPDATE: Final = f"{DOMAIN}_update"
+PAIR_NOTIFICATION_ID: Final = f"{DOMAIN}_pair_request"
 
 # Folder used by the older "KDE Connect" custom integration (bartv2/kde_connect).
 LEGACY_CONFIG_DIR: Final = "kde_connect"
@@ -53,3 +61,11 @@ OUTGOING_CAPABILITIES: Final = (
     PACKET_TYPE_FINDMYPHONE_REQUEST,
     PACKET_TYPE_LOCK_REQUEST,
 )
+
+
+def default_name(location_name: str | None) -> str:
+    """Return the name devices see, like "Home - Home Assistant"."""
+    base = filter_device_name(location_name)
+    if not base or base == DEFAULT_NAME:
+        return DEFAULT_NAME
+    return base[: 32 - len(NAME_SUFFIX)].rstrip() + NAME_SUFFIX

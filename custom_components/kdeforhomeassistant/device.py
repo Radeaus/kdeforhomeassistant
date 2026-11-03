@@ -214,6 +214,10 @@ class KdeConnectDevice:
         """Run one of the commands the device offers."""
         return self._send(PACKET_TYPE_RUNCOMMAND_REQUEST, {"key": key})
 
+    def open_command_setup(self) -> bool:
+        """Open the run command settings on the device, to add commands."""
+        return self._send(PACKET_TYPE_RUNCOMMAND_REQUEST, {"setup": True})
+
     def ring(self) -> bool:
         """Make the device play its find-my-device sound."""
         return self._send(PACKET_TYPE_FINDMYPHONE_REQUEST, {})
