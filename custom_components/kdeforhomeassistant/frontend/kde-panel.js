@@ -83,9 +83,17 @@ const STRINGS = {
     waiting_connect: "Waiting for {name} to connect…",
     no_commands: "No commands yet",
     no_commands_text: "Add a command on {name} and it shows up here right away.",
-    add_command: "Add command on {name}",
+    add_command: "Manage commands on {name}",
     command_setup_opened:
-      "The command settings opened on {name}. Add a command there with a name and the command to run.",
+      "The command settings opened on {name}. Add or delete commands there; changes show up here right away.",
+    remove_button: "Remove from Home Assistant",
+    remove_button_confirm: "Remove {command} from Home Assistant?",
+    remove_button_text:
+      "The button disappears from Home Assistant. The command stays in KDE Connect on {name}. To delete it there too, select Manage commands.",
+    removed_buttons: "Removed buttons",
+    remove_short: "Remove",
+    restore: "Restore",
+    command_toggle_help: "Turn off the commands you don't want as a button.",
     step_scripts_title: "Share scripts",
     step_scripts_text:
       "Choose the Home Assistant scripts {name} may run. They show up under Run command in KDE Connect.",
@@ -194,9 +202,17 @@ const STRINGS = {
     waiting_connect: "Wachten tot {name} verbinding maakt…",
     no_commands: "Nog geen opdrachten",
     no_commands_text: "Voeg een opdracht toe op {name}, dan verschijnt die hier meteen.",
-    add_command: "Opdracht toevoegen op {name}",
+    add_command: "Opdrachten beheren op {name}",
     command_setup_opened:
-      "De opdrachtinstellingen zijn geopend op {name}. Voeg daar een opdracht toe met een naam en de opdracht die moet worden uitgevoerd.",
+      "De opdrachtinstellingen zijn geopend op {name}. Voeg daar opdrachten toe of verwijder ze; wijzigingen verschijnen hier meteen.",
+    remove_button: "Verwijderen uit Home Assistant",
+    remove_button_confirm: "{command} verwijderen uit Home Assistant?",
+    remove_button_text:
+      "De knop verdwijnt uit Home Assistant. De opdracht blijft in KDE Connect op {name} staan. Wil je hem daar ook verwijderen, kies dan Opdrachten beheren.",
+    removed_buttons: "Verwijderde knoppen",
+    remove_short: "Verwijderen",
+    restore: "Terugzetten",
+    command_toggle_help: "Zet de opdrachten uit die je niet als knop wilt.",
     step_scripts_title: "Scripts delen",
     step_scripts_text:
       "Kies welke Home Assistant-scripts {name} mag uitvoeren. Ze verschijnen onder Opdracht uitvoeren in KDE Connect.",
@@ -706,6 +722,8 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       this._wiz.scripts = [...set];
     } else if (field === "deviceScript") {
       this._toggleDeviceScript(target.dataset.id, target.dataset.value, target.checked);
+    } else if (field === "commandShown") {
+      this._setCommandHidden(target.dataset.id, target.dataset.value, !target.checked);
     }
   }
 
@@ -832,6 +850,20 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         });
         return;
       }
+      case "command-remove-ask":
+        this._edit.removeCommand = data.key;
+        this._render();
+        return;
+      case "command-remove-cancel":
+        this._edit.removeCommand = null;
+        this._render();
+        return;
+      case "command-remove":
+        await this._setCommandHidden(data.id, data.key, true);
+        return;
+      case "command-restore":
+        await this._setCommandHidden(data.id, data.key, false);
+        return;
       case "remove":
         this._edit.removing = true;
         this._render();
@@ -847,6 +879,17 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         });
         return;
     }
+  }
+
+  async _setCommandHidden(id, key, hide) {
+    const device = this._device(id);
+    if (!device) return;
+    const set = new Set(device.commands.filter((c) => c.hidden).map((c) => c.key));
+    hide ? set.add(key) : set.delete(key);
+    await this._run("hide", async () => {
+      await this._ws("update_device", { subentry_id: id, hidden_commands: [...set] });
+      this._edit.removeCommand = null;
+    });
   }
 
   async _toggleDeviceScript(id, entityId, checked) {
@@ -1065,19 +1108,43 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         ${ent.wake ? this._button(this._t("turn_on"), "press", { appearance: "filled", iconName: "mdi:power", data: { entity: ent.wake }, busy: this._busy.has("press" + ent.wake) }) : ""}
       </div></ha-card>`;
 
-    const commands = d.commands.length
-      ? `<div class="list">${d.commands
-          .map((c) =>
-            this._row({
-              iconName: "mdi:gesture-tap-button",
-              headline: c.name,
-              supporting: c.command ? esc(c.command) : "",
-              supportingMono: true,
-              end: c.entity_id ? this._button(this._t("run"), "press", { appearance: "plain", data: { entity: c.entity_id }, disabled: !d.connected, busy: this._busy.has("press" + c.entity_id) }) : "",
-            })
-          )
-          .join("")}</div>`
+    const shown = d.commands.filter((c) => !c.hidden);
+    const hidden = d.commands.filter((c) => c.hidden);
+    const commandRow = (c) => {
+      if (this._edit.removeCommand === c.key) {
+        return `<div class="card-content">${this._alert("warning", esc(this._t("remove_button_text", { name: d.name })), {
+          title: this._t("remove_button_confirm", { command: c.name }),
+          actions:
+            this._button(this._t("cancel"), "command-remove-cancel", { appearance: "plain" }) +
+            this._button(this._t("remove_short"), "command-remove", { variant: "danger", data: { id: d.id, key: c.key }, busy: this._busy.has("hide") }),
+        })}</div>`;
+      }
+      return this._row({
+        iconName: "mdi:gesture-tap-button",
+        headline: c.name,
+        supporting: c.command ? esc(c.command) : "",
+        supportingMono: true,
+        end:
+          (c.entity_id ? this._button(this._t("run"), "press", { appearance: "plain", data: { entity: c.entity_id }, disabled: !d.connected, busy: this._busy.has("press" + c.entity_id) }) : "") +
+          `<ha-icon-button data-action="command-remove-ask" data-key="${esc(c.key)}" label="${esc(this._t("remove_button"))}">${icon("mdi:delete-outline")}</ha-icon-button>`,
+      });
+    };
+    let commands = shown.length
+      ? `<div class="list">${shown.map(commandRow).join("")}</div>`
       : `<div class="inline-empty">${esc(this._t("no_commands_text", { name: d.name }))}</div>`;
+    if (hidden.length) {
+      commands += `<div class="subheader">${esc(this._t("removed_buttons"))}</div><div class="list">${hidden
+        .map((c) =>
+          this._row({
+            iconName: "mdi:eye-off-outline",
+            headline: c.name,
+            supporting: c.command ? esc(c.command) : "",
+            supportingMono: true,
+            end: this._button(this._t("restore"), "command-restore", { appearance: "plain", data: { id: d.id, key: c.key }, busy: this._busy.has("hide") }),
+          })
+        )
+        .join("")}</div>`;
+    }
 
     const scripts = this._scripts();
     const scriptList = scripts.length
@@ -1123,7 +1190,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         ${this._requests()}${this._notices()}${status}
         <ha-card header="${esc(this._t("buttons"))}">
           <p class="card-text">${esc(this._t("buttons_text", { name: d.name }))}</p>${commands}
-          <div class="card-actions">${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:plus", data: { id: d.id, name: d.name }, disabled: !d.connected, busy: this._busy.has("setup" + d.id) })}</div></ha-card>
+          <div class="card-actions">${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:cog-outline", data: { id: d.id, name: d.name }, disabled: !d.connected, busy: this._busy.has("setup" + d.id) })}</div></ha-card>
         <ha-card header="${esc(this._t("scripts"))}">
           <p class="card-text">${esc(this._t("step_scripts_text", { name: d.name }))}</p>${scriptList}
           <div class="card-actions">${this._link(this._t("create_script"), "/config/script/edit/new", { iconName: "mdi:plus" })}</div></ha-card>
@@ -1245,21 +1312,21 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         } else if (!d.commands.length) {
           list = `<div class="inline-empty bordered"><b>${esc(this._t("no_commands"))}</b><br>${esc(this._t("no_commands_text", { name }))}</div>`;
         } else {
-          list = `<div class="list bordered">${d.commands
+          list = `<p class="hint">${esc(this._t("command_toggle_help"))}</p><div class="list bordered">${d.commands
             .map((c) =>
               this._row({
                 iconName: "mdi:gesture-tap-button",
                 headline: c.name,
                 supporting: c.command ? esc(c.command) : "",
                 supportingMono: true,
-                end: icon("mdi:check"),
+                end: `<ha-switch data-field="commandShown" data-id="${esc(d.id)}" data-value="${esc(c.key)}" ${c.hidden ? "" : "checked"} ${this._busy.has("hide") ? "disabled" : ""}></ha-switch>`,
               })
             )
             .join("")}</div>`;
         }
         content = `${this._alert("success", esc(this._t("paired", { name })))}
           <p>${esc(this._t("step_commands_text", { name }))}</p>${this._notices()}${list}
-          <div class="actions-row start">${this._button(this._t("add_command", { name }), "command-setup", { appearance: "outlined", iconName: "mdi:plus", data: { id: wiz.subentryId, name }, disabled: !connected, busy: this._busy.has("setup" + wiz.subentryId) })}</div>`;
+          <div class="actions-row start">${this._button(this._t("add_command", { name }), "command-setup", { appearance: "outlined", iconName: "mdi:cog-outline", data: { id: wiz.subentryId, name }, disabled: !connected, busy: this._busy.has("setup" + wiz.subentryId) })}</div>`;
         break;
       }
       case "scripts": {
@@ -1404,6 +1471,7 @@ ha-card { display: block; overflow: hidden; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--disabled-text-color, #9e9e9e); flex: none; }
 .dot.on { background: var(--success-color, #4caf50); }
 ha-alert { display: block; }
+.alert-actions ha-button { white-space: nowrap; }
 .alert-actions { display: flex; gap: var(--kde-space-2); flex-wrap: wrap; }
 .key { font-family: var(--ha-font-family-code, ui-monospace, monospace); font-size: var(--ha-font-size-xl, 20px); letter-spacing: 0.15em; margin-top: var(--kde-space-2); }
 .key.big {
@@ -1415,6 +1483,8 @@ ha-alert { display: block; }
 .inline-form { display: flex; align-items: center; gap: var(--kde-space-3); flex-wrap: wrap; }
 .inline-form .text-field { flex: 1; min-width: 200px; }
 .hint { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); }
+.subheader { padding: var(--kde-space-3) var(--kde-space-4) 0; color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px); font-weight: var(--ha-font-weight-medium, 500); }
+.row-end ha-icon-button { --mdc-icon-button-size: 40px; }
 .inline-empty { padding: var(--kde-space-4); color: var(--secondary-text-color); text-align: center; }
 a.button-link { text-decoration: none; }
 .wizard-body { padding: var(--kde-space-6); }

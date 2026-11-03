@@ -19,6 +19,7 @@ from .const import (
     CONF_CAPABILITIES,
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
+    CONF_HIDDEN_COMMANDS,
     CONF_SCRIPTS,
     DOMAIN,
 )
@@ -61,6 +62,9 @@ class KdeConnectDevice:
         self.capabilities: frozenset[str] = frozenset(data.get(CONF_CAPABILITIES, ()))
         self.mac: str | None = data.get(CONF_MAC) or None
         self.scripts: list[str] = list(data.get(CONF_SCRIPTS, ()))
+        self.hidden_commands: frozenset[str] = frozenset(
+            data.get(CONF_HIDDEN_COMMANDS, ())
+        )
         self.remote_commands: dict[str, dict[str, str]] = {}
         self.locked: bool | None = None
         self._listeners: list[Callable[[], None]] = []

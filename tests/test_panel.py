@@ -6,6 +6,7 @@ import asyncio
 import time
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from custom_components.kdeforhomeassistant.const import (
     DOMAIN,
@@ -211,5 +212,64 @@ async def test_pair_and_manage_from_panel(hass: HomeAssistant, hass_ws_client) -
     await hass.async_block_till_done()
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert not entry.subentries
+    device.close()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_remove_and_restore_button(hass: HomeAssistant, hass_ws_client) -> None:
+    """A removed command button stays gone until it is restored."""
+    entry = await _setup(hass)
+    device = FakeDevice("Desk", protocol_version=8)
+    device.commands = {
+        "lock": {"name": "Lock", "command": "loginctl lock-session"},
+        "spot": {"name": "Spotify", "command": "spotify"},
+    }
+    await device.connect(entry.runtime_data.hub.tcp_port)
+    device_id = device.identity.device_id
+    await _wait(lambda: entry.runtime_data.hub.is_link_connected(device_id))
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": f"{DOMAIN}/pair", "device_id": device_id})
+    msg = await client.receive_json()
+    paired = await _next_event(client, msg["id"], lambda e: "paired" in e or "error" in e)
+    subentry_id = paired["paired"]
+    await hass.async_block_till_done()
+
+    async def reconnect() -> None:
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        device.packets.clear()
+        await device.connect(entry.runtime_data.hub.tcp_port)
+        await device.wait_for(PACKET_TYPE_RUNCOMMAND_REQUEST, requestCommandList=True)
+        await asyncio.sleep(0.3)
+        await hass.async_block_till_done()
+
+    await reconnect()
+    assert hass.states.get("button.desk_lock") is not None
+
+    async def set_hidden(keys: list[str]) -> None:
+        await client.send_json_auto_id(
+            {
+                "type": f"{DOMAIN}/update_device",
+                "subentry_id": subentry_id,
+                "hidden_commands": keys,
+            }
+        )
+        msg = await client.receive_json()
+        while msg.get("type") == "event":
+            msg = await client.receive_json()
+        assert msg["success"], msg
+        await hass.async_block_till_done()
+        await reconnect()
+
+    await set_hidden(["lock"])
+    registry = er.async_get(hass)
+    assert registry.async_get("button.desk_lock") is None
+    assert hass.states.get("button.desk_spotify") is not None
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entry.subentries[subentry_id].data["hidden_commands"] == ["lock"]
+
+    await set_hidden([])
+    assert registry.async_get("button.desk_lock") is not None
+
     device.close()
     assert await hass.config_entries.async_unload(entry.entry_id)

@@ -29,6 +29,7 @@ CONF_PRIVATE_KEY: Final = "private_key"
 CONF_DEVICE_TYPE: Final = "device_type"
 CONF_CAPABILITIES: Final = "capabilities"
 CONF_SCRIPTS: Final = "scripts"
+CONF_HIDDEN_COMMANDS: Final = "hidden_commands"
 
 DEFAULT_NAME: Final = "Home Assistant"
 NAME_SUFFIX: Final = " - Home Assistant"

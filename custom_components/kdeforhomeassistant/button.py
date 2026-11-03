@@ -42,6 +42,10 @@ async def async_setup_entry(
         for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
             if reg_entry.domain == "button" and reg_entry.unique_id.startswith(prefix):
                 key = reg_entry.unique_id.removeprefix(prefix)
+                if key in device.hidden_commands:
+                    # Removed from Home Assistant on the panel.
+                    registry.async_remove(reg_entry.entity_id)
+                    continue
                 known.add(key)
                 entities.append(
                     KdeConnectCommandButton(device, key, reg_entry.original_name or key)
@@ -53,15 +57,20 @@ async def async_setup_entry(
         ) -> Callable[[], None]:
             @callback
             def commands_changed() -> None:
+                wanted = {
+                    key: command
+                    for key, command in device.remote_commands.items()
+                    if key not in device.hidden_commands
+                }
                 new = [
                     KdeConnectCommandButton(device, key, command["name"])
-                    for key, command in device.remote_commands.items()
+                    for key, command in wanted.items()
                     if key not in known
                 ]
-                known.update(device.remote_commands)
+                known.update(wanted)
                 if new:
                     async_add_entities(new, config_subentry_id=subentry_id)
-                for key in list(known - set(device.remote_commands)):
+                for key in list(known - set(wanted)):
                     known.discard(key)
                     if entity_id := registry.async_get_entity_id(
                         "button", DOMAIN, prefix + key

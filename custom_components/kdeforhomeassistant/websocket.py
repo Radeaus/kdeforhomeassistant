@@ -23,6 +23,7 @@ from .const import (
     CONF_CERTIFICATE,
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
+    CONF_HIDDEN_COMMANDS,
     CONF_SCRIPTS,
     CONNECT_TIMEOUT,
     DOMAIN,
@@ -111,6 +112,7 @@ def build_state(hass: HomeAssistant) -> dict[str, Any]:
         device_id = data[CONF_DEVICE_ID]
         paired.add(device_id)
         device = runtime_devices.get(subentry.subentry_id)
+        hidden = set(data.get(CONF_HIDDEN_COMMANDS, []))
         prefix = f"{device_id}_{COMMAND_PREFIX}"
         commands: dict[str, dict[str, Any]] = {}
         for unique_id, reg in entities.items():
@@ -131,6 +133,10 @@ def build_state(hass: HomeAssistant) -> dict[str, Any]:
                     "command": command["command"],
                     "entity_id": reg.entity_id if reg else None,
                 }
+        for key, command in commands.items():
+            command["hidden"] = key in hidden
+            if key in hidden:
+                command["entity_id"] = None
         devices.append(
             {
                 "id": subentry.subentry_id,
@@ -456,6 +462,7 @@ def _subentry(
         vol.Required("subentry_id"): cv.string,
         vol.Optional("mac"): vol.Any(None, cv.string),
         vol.Optional("scripts"): [cv.entity_id],
+        vol.Optional("hidden_commands"): [cv.string],
     }
 )
 @websocket_api.require_admin
@@ -463,7 +470,7 @@ def _subentry(
 def ws_update_device(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
 ) -> None:
-    """Change Wake-on-LAN and the scripts a device may run."""
+    """Change Wake-on-LAN, shared scripts and which buttons are removed."""
     if (found := _subentry(hass, connection, msg)) is None:
         return
     entry, subentry = found
@@ -482,6 +489,8 @@ def ws_update_device(
             connection.send_error(msg["id"], "invalid_script", "Only scripts")
             return
         updates[CONF_SCRIPTS] = list(dict.fromkeys(msg["scripts"]))
+    if "hidden_commands" in msg:
+        updates[CONF_HIDDEN_COMMANDS] = sorted(set(msg["hidden_commands"]))
     if any(subentry.data.get(key) != value for key, value in updates.items()):
         hass.config_entries.async_update_subentry(
             entry, subentry, data={**subentry.data, **updates}
