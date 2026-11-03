@@ -1,7 +1,7 @@
 // KDE for Home Assistant: the sidebar page with the setup wizard and device settings.
-// Plain web component, no build step. Styling follows the Home Assistant design
-// tokens (https://contributors.home-assistant.io/design/), with fallbacks for
-// older releases that do not define them yet.
+// Plain web component, no build step. It is built from Home Assistant's own
+// components (ha-card, ha-button, ha-alert, ha-switch, ...) and design tokens,
+// following https://contributors.home-assistant.io/design/.
 
 const DOMAIN = "kdeforhomeassistant";
 const PANEL_PATH = "/kde-for-home-assistant";
@@ -248,14 +248,55 @@ const esc = (value) =>
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
   );
 
-const icon = (name) => `<ha-icon icon="${esc(name)}"></ha-icon>`;
+const icon = (name, slot = "") =>
+  `<ha-icon ${slot ? `slot="${slot}"` : ""} icon="${esc(name)}"></ha-icon>`;
 const typeIcon = (type) => TYPE_ICONS[type] || "mdi:devices";
+
+// Home Assistant only loads most of its components when a page needs them.
+// Load the configuration panel once, which defines the form components we use.
+const NEEDED = ["ha-card", "ha-button", "ha-alert", "ha-switch", "ha-spinner", "ha-icon-button"];
+const textFieldTag = () =>
+  customElements.get("ha-input") ? "ha-input" : "ha-textfield";
+
+let componentsLoaded;
+const loadComponents = () => {
+  if (!componentsLoaded) componentsLoaded = doLoadComponents();
+  return componentsLoaded;
+};
+
+async function doLoadComponents() {
+  const ready = () =>
+    NEEDED.every((tag) => customElements.get(tag)) &&
+    (customElements.get("ha-input") || customElements.get("ha-textfield"));
+  if (ready()) return;
+  try {
+    await customElements.whenDefined("partial-panel-resolver");
+    const resolver = document.createElement("partial-panel-resolver");
+    resolver.hass = { panels: [{ url_path: "tmp", component_name: "config" }] };
+    resolver._updateRoutes();
+    await resolver.routerOptions.routes.tmp.load();
+    await customElements.whenDefined("ha-panel-config");
+    const config = document.createElement("ha-panel-config");
+    await config.routerOptions.routes.script.load();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("KDE for Home Assistant: could not preload components", err);
+  }
+  await Promise.race([
+    Promise.all(NEEDED.map((tag) => customElements.whenDefined(tag))),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ]);
+}
 
 class KdeForHomeAssistantPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
     this._state = null;
+    this._path = "";
+    this._routeSet = false;
+    this._stateJson = "";
+    this._ready = false;
     this._wiz = null;
     this._notice = null;
     this._edit = {};
@@ -266,10 +307,15 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && ev.target.dataset?.enter) {
+      const target = ev.composedPath().find((node) => node.dataset?.enter);
+      if (ev.key === "Enter" && target) {
         ev.preventDefault();
-        this._action(ev.target.dataset.enter, ev.target);
+        this._action(target.dataset.enter, target);
       }
+    });
+    loadComponents().then(() => {
+      this._ready = true;
+      this._render();
     });
   }
 
@@ -278,8 +324,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
-    const menu = this.shadowRoot.querySelector("ha-menu-button");
-    if (menu) menu.hass = hass;
+    for (const el of this.shadowRoot.querySelectorAll("ha-menu-button")) el.hass = hass;
     if (first) {
       this._subscribe();
       this._render();
@@ -288,8 +333,11 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     const key = this._scripts()
       .map((s) => s.entity_id + s.name)
       .join("|");
-    if (key !== this._scriptsKey) {
-      this._scriptsKey = key;
+    const lock = Object.values(this._state?.devices || {})
+      .map((d) => this._hass.states[d.entities?.screen_lock]?.state)
+      .join("|");
+    if (key + lock !== this._scriptsKey) {
+      this._scriptsKey = key + lock;
       this._render();
     }
   }
@@ -300,15 +348,16 @@ class KdeForHomeAssistantPanel extends HTMLElement {
 
   set narrow(value) {
     this._narrow = value;
-    const menu = this.shadowRoot.querySelector("ha-menu-button");
-    if (menu) menu.narrow = value;
+    for (const el of this.shadowRoot.querySelectorAll("ha-menu-button")) el.narrow = value;
   }
 
   set route(route) {
     const before = this._path;
+    const first = !this._routeSet;
+    this._routeSet = true;
     this._route = route;
     this._path = route?.path || "";
-    if (before !== undefined && before !== this._path) this._routeChanged();
+    if (first || before !== this._path) this._routeChanged();
   }
 
   set panel(_panel) {}
@@ -365,6 +414,9 @@ class KdeForHomeAssistantPanel extends HTMLElement {
 
   _subscribe() {
     this._sub("state", "subscribe", {}, (state) => {
+      const json = JSON.stringify(state);
+      if (json === this._stateJson) return;
+      this._stateJson = json;
       this._state = state;
       this._stateChanged();
     }).catch((err) => {
@@ -398,17 +450,19 @@ class KdeForHomeAssistantPanel extends HTMLElement {
   // Reacting to changes
 
   _routeChanged() {
-    const view = this._view();
-    if (view.name === "wizard" && !this._wiz) this._startWizard();
-    if (view.name !== "wizard" && this._wiz) this._stopWizard();
     this._notice = null;
     this._edit = {};
-    this._render();
+    if (this._view().name !== "wizard" && this._wiz) this._stopWizard();
+    if (this._state) this._stateChanged();
   }
 
   _stateChanged() {
     const state = this._state;
     const view = this._view();
+    if (!this._routeSet) {
+      this._render();
+      return;
+    }
     // First visit without devices: go straight to the wizard.
     if (
       !this._autoStarted &&
@@ -438,6 +492,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       name: this._state.name || this._state.default_name || "",
       selected: null,
       manualHost: "",
+      manualOpen: false,
       pair: null,
       subentryId: null,
       deviceName: "",
@@ -478,7 +533,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     if (step === "scripts" && device) wiz.scripts = [...device.scripts];
     if (step === "wake" && device) wiz.mac = device.mac || "";
     this._render();
-    this.shadowRoot.querySelector(".content")?.scrollTo?.(0, 0);
+    this.scrollTo?.(0, 0);
   }
 
   _wizardStateChanged() {
@@ -495,9 +550,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     }
     if (wiz.step === "pair" && wiz.pair?.mode === "incoming" && !wiz.pair.done) {
       const still = state.requests?.find((r) => r.device_id === wiz.pair.deviceId);
-      if (!still && !this._busy.has("accept")) {
-        wiz.pair.expired = true;
-      }
+      if (!still && !this._busy.has("accept")) wiz.pair.expired = true;
     }
     if (wiz.subentryId) {
       const device = this._device(wiz.subentryId);
@@ -568,8 +621,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
           await this._ws("set_name", { name });
         }
       } else if (wiz.step === "choose") {
-        if (!wiz.selected) return;
-        this._startPair(wiz.selected);
+        if (wiz.selected) this._startPair(wiz.selected);
         return;
       } else if (wiz.step === "scripts") {
         this._busy.add("next");
@@ -639,28 +691,27 @@ class KdeForHomeAssistantPanel extends HTMLElement {
   // Events
 
   _onInput(ev) {
-    const target = ev.target;
-    const field = target.dataset?.field;
-    if (!field) return;
+    const target = ev.composedPath().find((node) => node.dataset?.field);
+    if (!target) return;
+    const field = target.dataset.field;
     if (field.startsWith("wiz.")) {
-      this._wiz[field.slice(4)] = target.value;
+      this._wiz[field.slice(4)] = target.value ?? "";
     } else if (field.startsWith("edit.")) {
-      this._edit[field.slice(5)] = target.value;
-    } else if (field === "wizScript" && ev.type === "change") {
+      this._edit[field.slice(5)] = target.value ?? "";
+    } else if (ev.type !== "change") {
+      return;
+    } else if (field === "wizScript") {
       const set = new Set(this._wiz.scripts);
-      target.checked ? set.add(target.value) : set.delete(target.value);
+      target.checked ? set.add(target.dataset.value) : set.delete(target.dataset.value);
       this._wiz.scripts = [...set];
-    } else if (field === "deviceScript" && ev.type === "change") {
-      this._toggleDeviceScript(target.dataset.id, target.value, target.checked);
-    } else if (field === "pick" && ev.type === "change") {
-      this._wiz.selected = target.value;
-      this._render();
+    } else if (field === "deviceScript") {
+      this._toggleDeviceScript(target.dataset.id, target.dataset.value, target.checked);
     }
   }
 
   _onClick(ev) {
     const el = ev.composedPath().find((node) => node.dataset?.action);
-    if (!el || el.disabled) return;
+    if (!el || el.disabled || el.hasAttribute?.("loading")) return;
     ev.preventDefault();
     this._action(el.dataset.action, el);
   }
@@ -676,6 +727,10 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         return;
       case "device":
         this._navigate(`/device/${encodeURIComponent(data.id)}`);
+        return;
+      case "pick":
+        this._wiz.selected = data.id;
+        this._render();
         return;
       case "wiz-close":
         if (this._wiz?.step === "pair") this._wizardBack();
@@ -708,7 +763,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       case "manual-toggle":
         this._wiz.manualOpen = !this._wiz.manualOpen;
         this._render();
-        if (this._wiz.manualOpen) this.shadowRoot.querySelector("#wiz-host")?.focus();
+        if (this._wiz.manualOpen) this._focus("#wiz-host");
         return;
       case "accept":
       case "decline":
@@ -723,7 +778,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         this._edit.renaming = true;
         this._edit.name = this._state.name;
         this._render();
-        this.shadowRoot.querySelector("#name-input")?.focus();
+        this._focus("#name-input");
         return;
       case "rename-cancel":
         this._edit = {};
@@ -738,7 +793,10 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       case "command-setup":
         await this._run("setup" + data.id, async () => {
           await this._ws("command_setup", { subentry_id: data.id });
-          this._notice = { type: "info", text: this._t("command_setup_opened", { name: data.name }) };
+          this._notice = {
+            type: "info",
+            text: this._t("command_setup_opened", { name: data.name }),
+          };
         });
         return;
       case "press":
@@ -825,74 +883,116 @@ class KdeForHomeAssistantPanel extends HTMLElement {
   _render() {
     if (!this._hass) return;
     const active = this.shadowRoot.activeElement;
-    const focus = active?.id
-      ? { id: active.id, start: active.selectionStart, end: active.selectionEnd }
-      : null;
+    const focus = active?.id ? { id: active.id } : null;
     const view = this._view();
     let body;
-    if (!this._state) body = this._loading();
+    if (!this._state || !this._ready) body = this._loading();
     else if (!this._state.configured) body = this._message(this._t("not_configured"));
     else if (view.name === "wizard" && this._wiz) body = this._renderWizard();
     else if (view.name === "device") body = this._renderDevice(view.id);
     else body = this._renderOverview();
     this.shadowRoot.innerHTML = `<style>${STYLES}</style>${body}`;
-    const menu = this.shadowRoot.querySelector("ha-menu-button");
-    if (menu) {
-      menu.hass = this._hass;
-      menu.narrow = this._narrow;
+    for (const el of this.shadowRoot.querySelectorAll("ha-menu-button")) {
+      el.hass = this._hass;
+      el.narrow = this._narrow;
     }
     if (focus) {
       const el = this.shadowRoot.getElementById(focus.id);
       if (el) {
-        el.focus();
-        try {
-          el.setSelectionRange(focus.start, focus.end);
-        } catch (_err) {
-          // Not a text field.
-        }
+        // Wait for the component to render before moving the cursor back.
+        customElements.whenDefined(el.localName).then(() => el.updateComplete).then(() => {
+          el.focus();
+          const length = (el.value || "").length;
+          try {
+            el.setSelectionRange?.(length, length);
+          } catch (_err) {
+            // Not a text field.
+          }
+        });
       }
     }
   }
 
+  async _focus(selector) {
+    const el = this.shadowRoot.querySelector(selector);
+    if (!el) return;
+    await customElements.whenDefined(el.localName);
+    await el.updateComplete;
+    el.focus();
+  }
+
+  // Building blocks, all Home Assistant components.
+
   _toolbar(title, { back = false, close = false } = {}) {
     const lead = close
-      ? `<button class="icon-button" data-action="wiz-close" aria-label="${esc(this._t("close"))}">${icon("mdi:close")}</button>`
+      ? `<ha-icon-button data-action="wiz-close" label="${esc(this._t("close"))}">${icon("mdi:close")}</ha-icon-button>`
       : back
-        ? `<button class="icon-button" data-action="home" aria-label="${esc(this._t("back"))}">${icon("mdi:arrow-left")}</button>`
+        ? `<ha-icon-button data-action="home" label="${esc(this._t("back"))}">${icon("mdi:arrow-left")}</ha-icon-button>`
         : `<ha-menu-button></ha-menu-button>`;
     return `<div class="toolbar">${lead}<div class="main-title">${esc(title)}</div></div>`;
   }
 
   _loading() {
-    return `${this._toolbar(this._t("title"))}<div class="content center"><div class="spinner" role="progressbar"></div></div>`;
+    return `${this._toolbar(this._t("title"))}<div class="content center"><ha-spinner></ha-spinner></div>`;
   }
 
   _message(text) {
-    return `${this._toolbar(this._t("title"))}<div class="content"><div class="container">${this._alert("warning", text)}</div></div>`;
+    return `${this._toolbar(this._t("title"))}<div class="content"><div class="container">${this._alert("warning", esc(text))}</div></div>`;
   }
 
-  _alert(type, text, actions = "") {
-    const icons = {
-      info: "mdi:information-outline",
-      warning: "mdi:alert-outline",
-      error: "mdi:alert-circle-outline",
-      success: "mdi:check-circle-outline",
-    };
-    return `<div class="alert ${type}" role="${type === "error" ? "alert" : "status"}">
-      ${icon(icons[type])}<div class="alert-text">${text}</div>${actions ? `<div class="alert-actions">${actions}</div>` : ""}
-    </div>`;
+  _alert(type, text, { title = "", actions = "" } = {}) {
+    return `<ha-alert alert-type="${type}" ${title ? `title="${esc(title)}"` : ""}>${text}${
+      actions ? `<div slot="action" class="alert-actions">${actions}</div>` : ""
+    }</ha-alert>`;
   }
 
-  _button(label, action, { appearance = "accent", variant = "brand", busy = false, disabled = false, data = {}, iconName = null } = {}) {
+  _button(label, action, { appearance = "accent", variant = "brand", busy = false, disabled = false, data = {}, iconName = null, size = "" } = {}) {
     const attrs = Object.entries(data)
       .map(([k, v]) => `data-${k}="${esc(v)}"`)
       .join(" ");
-    return `<button class="btn ${appearance} ${variant}" data-action="${action}" ${attrs} ${disabled || busy ? "disabled" : ""}>
-      ${busy ? `<span class="spinner small"></span>` : iconName ? icon(iconName) : ""}<span>${esc(label)}</span></button>`;
+    return `<ha-button appearance="${appearance}" variant="${variant}" ${size ? `size="${size}"` : ""} data-action="${action}" ${attrs} ${disabled ? "disabled" : ""} ${busy ? "loading" : ""}>${
+      iconName ? icon(iconName, "start") : ""
+    }${esc(label)}</ha-button>`;
+  }
+
+  _link(label, href, { iconName = null, newTab = false } = {}) {
+    return `<a class="button-link" href="${esc(href)}" ${newTab ? 'target="_blank" rel="noreferrer"' : ""}><ha-button appearance="outlined" variant="brand">${
+      iconName ? icon(iconName, "start") : ""
+    }${esc(label)}</ha-button></a>`;
+  }
+
+  _textField({ id, field, label, value, hint = "", placeholder = "", enter = "", data = {}, maxlength = 0, mono = false }) {
+    const tag = textFieldTag();
+    const attrs = Object.entries(data)
+      .map(([k, v]) => `data-${k}="${esc(v)}"`)
+      .join(" ");
+    const help =
+      tag === "ha-input"
+        ? hint ? `hint="${esc(hint)}"` : ""
+        : hint ? `helper="${esc(hint)}" helperpersistent` : "";
+    return `<${tag} id="${id}" class="text-field ${mono ? "mono-field" : ""}" data-field="${field}" ${enter ? `data-enter="${enter}"` : ""} ${attrs}
+      label="${esc(label)}" value="${esc(value)}" ${help} ${placeholder ? `placeholder="${esc(placeholder)}"` : ""}
+      ${maxlength ? `maxlength="${maxlength}"` : ""} autocomplete="off"></${tag}>`;
   }
 
   _notices() {
     return this._notice ? this._alert(this._notice.type, esc(this._notice.text)) : "";
+  }
+
+  _status(connected) {
+    return `<span class="status"><span class="dot ${connected ? "on" : ""}"></span>${esc(this._t(connected ? "connected" : "not_connected"))}</span>`;
+  }
+
+  _row({ iconName = null, headline, supporting = "", supportingMono = false, end = "", action = "", data = {}, selected = false }) {
+    const attrs = Object.entries(data)
+      .map(([k, v]) => `data-${k}="${esc(v)}"`)
+      .join(" ");
+    const tag = action ? "button" : "div";
+    return `<${tag} class="row ${action ? "clickable" : ""} ${selected ? "selected" : ""}" ${action ? `data-action="${action}" type="button"` : ""} ${attrs}>
+      ${iconName ? `<span class="row-icon">${icon(iconName)}</span>` : ""}
+      <span class="row-text"><span class="headline">${esc(headline)}</span>${
+        supporting ? `<span class="supporting ${supportingMono ? "mono" : ""}">${supporting}</span>` : ""
+      }</span>${end ? `<span class="row-end">${end}</span>` : ""}</${tag}>`;
   }
 
   _requests() {
@@ -900,9 +1000,13 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       .map((r) =>
         this._alert(
           "info",
-          `<b>${esc(this._t("request_title", { name: r.name }))}</b><br>${esc(this._t("request_text", { name: r.name }))}<div class="key">${esc(r.key)}</div>`,
-          this._button(this._t("decline"), "decline", { appearance: "plain", data: { id: r.device_id }, busy: this._busy.has("decline" + r.device_id) }) +
-            this._button(this._t("accept"), "accept", { data: { id: r.device_id }, busy: this._busy.has("accept" + r.device_id) })
+          `${esc(this._t("request_text", { name: r.name }))}<div class="key">${esc(r.key)}</div>`,
+          {
+            title: this._t("request_title", { name: r.name }),
+            actions:
+              this._button(this._t("decline"), "decline", { appearance: "plain", data: { id: r.device_id }, busy: this._busy.has("decline" + r.device_id) }) +
+              this._button(this._t("accept"), "accept", { data: { id: r.device_id }, busy: this._busy.has("accept" + r.device_id) }),
+          }
         )
       )
       .join("");
@@ -911,33 +1015,37 @@ class KdeForHomeAssistantPanel extends HTMLElement {
   _renderOverview() {
     const state = this._state;
     const rows = state.devices
-      .map(
-        (d) => `<button class="row clickable" data-action="device" data-id="${esc(d.id)}">
-          <span class="row-icon">${icon(typeIcon(d.type))}</span>
-          <span class="row-text"><span class="headline">${esc(d.name)}</span>
-          <span class="supporting"><span class="dot ${d.connected ? "on" : ""}"></span>${esc(this._t(d.connected ? "connected" : "not_connected"))}</span></span>
-          <span class="row-end">${icon("mdi:chevron-right")}</span></button>`
+      .map((d) =>
+        this._row({
+          iconName: typeIcon(d.type),
+          headline: d.name,
+          supporting: this._status(d.connected),
+          end: icon("mdi:chevron-right"),
+          action: "device",
+          data: { id: d.id },
+        })
       )
       .join("");
     const devices = state.devices.length
-      ? `<div class="card"><div class="card-header">${esc(this._t("devices"))}</div><div class="list">${rows}</div>
-         <div class="card-actions">${this._button(this._t("add_device"), "add", { iconName: "mdi:plus", disabled: !state.loaded })}</div></div>`
-      : `<div class="card empty"><div class="empty-icon">${icon("mdi:monitor-cellphone")}</div>
+      ? `<ha-card header="${esc(this._t("devices"))}"><div class="list">${rows}</div>
+         <div class="card-actions">${this._button(this._t("add_device"), "add", { iconName: "mdi:plus", disabled: !state.loaded })}</div></ha-card>`
+      : `<ha-card><div class="empty"><div class="empty-icon">${icon("mdi:monitor-cellphone")}</div>
          <h2>${esc(this._t("empty_title"))}</h2><p>${esc(this._t("empty_text"))}</p>
-         ${this._button(this._t("add_device"), "add", { iconName: "mdi:plus", disabled: !state.loaded })}</div>`;
+         ${this._button(this._t("add_device"), "add", { iconName: "mdi:plus", disabled: !state.loaded })}</div></ha-card>`;
     const nameRow = this._edit.renaming
-      ? `<div class="field"><label for="name-input">${esc(this._t("ha_name"))}</label>
-         <input id="name-input" data-field="edit.name" data-enter="rename-save" value="${esc(this._edit.name)}" maxlength="32">
-         <div class="help">${esc(this._t("ha_name_help"))}</div></div>
+      ? `<div class="card-content">${this._textField({ id: "name-input", field: "edit.name", enter: "rename-save", label: this._t("ha_name"), value: this._edit.name, hint: this._t("ha_name_help"), maxlength: 32 })}</div>
          <div class="card-actions">${this._button(this._t("cancel"), "rename-cancel", { appearance: "plain" })}${this._button(this._t("save"), "rename-save", { busy: this._busy.has("rename") })}</div>`
-      : `<div class="row"><span class="row-icon">${icon("mdi:home-assistant")}</span>
-         <span class="row-text"><span class="headline">${esc(state.name)}</span><span class="supporting">${esc(this._t("ha_name_help"))}</span></span>
-         <span class="row-end">${this._button(this._t("rename"), "rename", { appearance: "plain" })}</span></div>`;
+      : this._row({
+          iconName: "mdi:home-assistant",
+          headline: state.name,
+          supporting: esc(this._t("ha_name_help")),
+          end: this._button(this._t("rename"), "rename", { appearance: "plain" }),
+        });
     return `${this._toolbar(this._t("title"))}
       <div class="content"><div class="container">
         ${state.loaded ? "" : this._alert("warning", esc(this._t("not_loaded")))}
         ${this._requests()}${this._notices()}${devices}
-        <div class="card"><div class="card-header">${esc(this._t("settings"))}</div>${nameRow}</div>
+        <ha-card header="${esc(this._t("settings"))}">${nameRow}</ha-card>
       </div></div>`;
   }
 
@@ -947,23 +1055,26 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       return `${this._toolbar(this._t("title"), { back: true })}<div class="content"><div class="container">${this._alert("warning", esc(this._t("unknown_device")))}</div></div>`;
     }
     const ent = d.entities;
-    const lockState = ent.screen_lock ? this._hass.states[ent.screen_lock]?.state : null;
-    const status = `<div class="card">
+    const locked = ent.screen_lock && this._hass.states[ent.screen_lock]?.state === "locked";
+    const status = `<ha-card>
       <div class="device-head"><span class="big-icon">${icon(typeIcon(d.type))}</span>
-      <div><div class="device-name">${esc(d.name)}</div>
-      <div class="supporting"><span class="dot ${d.connected ? "on" : ""}"></span>${esc(this._t(d.connected ? "connected" : "not_connected"))}</div></div></div>
+      <div class="device-text"><div class="device-name">${esc(d.name)}</div>${this._status(d.connected)}</div></div>
       <div class="card-actions start">
-        ${ent.ring ? this._button(this._t("ring"), "press", { appearance: "outlined", iconName: "mdi:bell-ring-outline", data: { entity: ent.ring }, disabled: !d.connected, busy: this._busy.has("press" + ent.ring) }) : ""}
-        ${ent.screen_lock ? this._button(this._t(lockState === "locked" ? "unlock" : "lock"), lockState === "locked" ? "unlock" : "lock", { appearance: "outlined", iconName: lockState === "locked" ? "mdi:lock-open-variant-outline" : "mdi:lock-outline", data: { entity: ent.screen_lock }, disabled: !d.connected, busy: this._busy.has("lock") || this._busy.has("unlock") }) : ""}
-        ${ent.wake ? this._button(this._t("turn_on"), "press", { appearance: "outlined", iconName: "mdi:power", data: { entity: ent.wake }, busy: this._busy.has("press" + ent.wake) }) : ""}
-      </div></div>`;
+        ${ent.ring ? this._button(this._t("ring"), "press", { appearance: "filled", iconName: "mdi:bell-ring-outline", data: { entity: ent.ring }, disabled: !d.connected, busy: this._busy.has("press" + ent.ring) }) : ""}
+        ${ent.screen_lock ? this._button(this._t(locked ? "unlock" : "lock"), locked ? "unlock" : "lock", { appearance: "filled", iconName: locked ? "mdi:lock-open-variant-outline" : "mdi:lock-outline", data: { entity: ent.screen_lock }, disabled: !d.connected, busy: this._busy.has("lock") || this._busy.has("unlock") }) : ""}
+        ${ent.wake ? this._button(this._t("turn_on"), "press", { appearance: "filled", iconName: "mdi:power", data: { entity: ent.wake }, busy: this._busy.has("press" + ent.wake) }) : ""}
+      </div></ha-card>`;
 
     const commands = d.commands.length
       ? `<div class="list">${d.commands
-          .map(
-            (c) => `<div class="row"><span class="row-icon">${icon("mdi:gesture-tap-button")}</span>
-            <span class="row-text"><span class="headline">${esc(c.name)}</span>${c.command ? `<span class="supporting mono">${esc(c.command)}</span>` : ""}</span>
-            <span class="row-end">${c.entity_id ? this._button(this._t("run"), "press", { appearance: "plain", data: { entity: c.entity_id }, disabled: !d.connected, busy: this._busy.has("press" + c.entity_id) }) : ""}</span></div>`
+          .map((c) =>
+            this._row({
+              iconName: "mdi:gesture-tap-button",
+              headline: c.name,
+              supporting: c.command ? esc(c.command) : "",
+              supportingMono: true,
+              end: c.entity_id ? this._button(this._t("run"), "press", { appearance: "plain", data: { entity: c.entity_id }, disabled: !d.connected, busy: this._busy.has("press" + c.entity_id) }) : "",
+            })
           )
           .join("")}</div>`
       : `<div class="inline-empty">${esc(this._t("no_commands_text", { name: d.name }))}</div>`;
@@ -971,49 +1082,71 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     const scripts = this._scripts();
     const scriptList = scripts.length
       ? `<div class="list">${scripts
-          .map(
-            (s) => `<label class="row clickable"><span class="row-icon">${icon("mdi:script-text-outline")}</span>
-            <span class="row-text"><span class="headline">${esc(s.name)}</span><span class="supporting mono">${esc(s.entity_id)}</span></span>
-            <span class="row-end"><input type="checkbox" class="switch" data-field="deviceScript" data-id="${esc(d.id)}" value="${esc(s.entity_id)}" ${d.scripts.includes(s.entity_id) ? "checked" : ""} ${this._busy.has("scripts") ? "disabled" : ""}></span></label>`
+          .map((s) =>
+            this._row({
+              iconName: "mdi:script-text-outline",
+              headline: s.name,
+              supporting: esc(s.entity_id),
+              supportingMono: true,
+              end: `<ha-switch data-field="deviceScript" data-id="${esc(d.id)}" data-value="${esc(s.entity_id)}" ${d.scripts.includes(s.entity_id) ? "checked" : ""} ${this._busy.has("scripts") ? "disabled" : ""}></ha-switch>`,
+            })
           )
           .join("")}</div>`
       : `<div class="inline-empty">${esc(this._t("no_scripts_text"))}</div>`;
 
-    const macValue = this._edit.mac ?? d.mac ?? "";
     const removing = this._edit.removing
-      ? `${this._alert("warning", esc(this._t("remove_confirm", { name: d.name })), this._button(this._t("cancel"), "remove-cancel", { appearance: "plain" }) + this._button(this._t("remove"), "remove-confirm", { variant: "danger", data: { id: d.id }, busy: this._busy.has("remove") }))}`
-      : `<div class="card-actions">${this._button(this._t("remove"), "remove", { appearance: "outlined", variant: "danger", iconName: "mdi:delete-outline" })}</div>`;
+      ? `<div class="card-content">${this._alert("warning", esc(this._t("remove_confirm", { name: d.name })), {
+          actions:
+            this._button(this._t("cancel"), "remove-cancel", { appearance: "plain" }) +
+            this._button(this._t("remove"), "remove-confirm", { variant: "danger", data: { id: d.id }, busy: this._busy.has("remove") }),
+        })}</div>`
+      : `<div class="card-actions">${this._button(this._t("remove"), "remove", { appearance: "plain", variant: "danger", iconName: "mdi:delete-outline" })}</div>`;
 
     const entityRows = Object.values(ent)
       .concat(d.commands.map((c) => c.entity_id).filter(Boolean))
       .map((entityId) => {
         const st = this._hass.states[entityId];
-        return `<button class="row clickable" data-action="more-info" data-entity="${esc(entityId)}">
-          <span class="row-icon">${icon(st?.attributes?.icon || "mdi:shape-outline")}</span>
-          <span class="row-text"><span class="headline">${esc(st?.attributes?.friendly_name || entityId)}</span><span class="supporting mono">${esc(entityId)}</span></span>
-          <span class="row-end">${icon("mdi:chevron-right")}</span></button>`;
+        return this._row({
+          iconName: st?.attributes?.icon || this._domainIcon(entityId),
+          headline: st?.attributes?.friendly_name || entityId,
+          supporting: esc(entityId),
+          supportingMono: true,
+          end: icon("mdi:chevron-right"),
+          action: "more-info",
+          data: { entity: entityId },
+        });
       })
       .join("");
 
     return `${this._toolbar(d.name, { back: true })}
       <div class="content"><div class="container">
         ${this._requests()}${this._notices()}${status}
-        <div class="card"><div class="card-header">${esc(this._t("buttons"))}</div>
+        <ha-card header="${esc(this._t("buttons"))}">
           <p class="card-text">${esc(this._t("buttons_text", { name: d.name }))}</p>${commands}
-          <div class="card-actions">${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:plus", data: { id: d.id, name: d.name }, disabled: !d.connected, busy: this._busy.has("setup" + d.id) })}</div></div>
-        <div class="card"><div class="card-header">${esc(this._t("scripts"))}</div>
+          <div class="card-actions">${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:plus", data: { id: d.id, name: d.name }, disabled: !d.connected, busy: this._busy.has("setup" + d.id) })}</div></ha-card>
+        <ha-card header="${esc(this._t("scripts"))}">
           <p class="card-text">${esc(this._t("step_scripts_text", { name: d.name }))}</p>${scriptList}
-          <div class="card-actions"><a class="btn outlined brand" href="/config/script/edit/new">${icon("mdi:plus")}<span>${esc(this._t("create_script"))}</span></a></div></div>
-        <div class="card"><div class="card-header">${esc(this._t("wake"))}</div>
+          <div class="card-actions">${this._link(this._t("create_script"), "/config/script/edit/new", { iconName: "mdi:plus" })}</div></ha-card>
+        <ha-card header="${esc(this._t("wake"))}">
           <p class="card-text">${esc(this._t("step_wake_text", { name: d.name }))}</p>
-          <div class="field"><label for="mac-input">${esc(this._t("mac_label"))}</label>
-          <input id="mac-input" data-field="edit.mac" data-enter="mac-save" data-id="${esc(d.id)}" value="${esc(macValue)}" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" spellcheck="false">
-          <div class="help">${esc(this._t("mac_help"))}</div></div>
-          <div class="card-actions">${this._button(this._t("save"), "mac-save", { data: { id: d.id }, busy: this._busy.has("mac") })}</div></div>
-        ${entityRows ? `<div class="card"><div class="card-header">${esc(this._t("entities"))}</div><div class="list">${entityRows}</div></div>` : ""}
-        <div class="card"><div class="card-header">${esc(this._t("remove"))}</div>
-          <p class="card-text">${esc(this._t("remove_text", { name: d.name }))}</p>${removing}</div>
+          <div class="card-content">${this._textField({ id: "mac-input", field: "edit.mac", enter: "mac-save", data: { id: d.id }, label: this._t("mac_label"), value: this._edit.mac ?? d.mac ?? "", hint: this._t("mac_help"), placeholder: "AA:BB:CC:DD:EE:FF", mono: true })}</div>
+          <div class="card-actions">${this._button(this._t("save"), "mac-save", { data: { id: d.id }, busy: this._busy.has("mac") })}</div></ha-card>
+        ${entityRows ? `<ha-card header="${esc(this._t("entities"))}"><div class="list">${entityRows}</div></ha-card>` : ""}
+        <ha-card header="${esc(this._t("remove"))}">
+          <p class="card-text">${esc(this._t("remove_text", { name: d.name }))}</p>${removing}</ha-card>
       </div></div>`;
+  }
+
+  _domainIcon(entityId) {
+    const domain = entityId.split(".")[0];
+    return (
+      {
+        binary_sensor: "mdi:lan-connect",
+        lock: "mdi:monitor-lock",
+        notify: "mdi:message-badge-outline",
+        button: "mdi:gesture-tap-button",
+      }[domain] || "mdi:shape-outline"
+    );
   }
 
   _renderWizard() {
@@ -1024,7 +1157,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     const name = wiz.deviceName;
     let title = "";
     let content = "";
-    let next = { label: this._t("next"), disabled: false, show: true };
+    const next = { label: this._t("next"), disabled: false, show: true };
     let back = index > 0 && !["commands", "done"].includes(wiz.step);
     let skip = false;
 
@@ -1032,8 +1165,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       case "name":
         title = this._t("step_name_title");
         content = `<p>${esc(this._t("step_name_text"))}</p>
-          <div class="field"><label for="wiz-name">${esc(this._t("name_label"))}</label>
-          <input id="wiz-name" data-field="wiz.name" data-enter="wiz-next" value="${esc(wiz.name)}" maxlength="32" autocomplete="off"></div>`;
+          ${this._textField({ id: "wiz-name", field: "wiz.name", enter: "wiz-next", label: this._t("name_label"), value: wiz.name, maxlength: 32 })}`;
         break;
       case "prepare":
         title = this._t("step_prepare_title");
@@ -1041,31 +1173,36 @@ class KdeForHomeAssistantPanel extends HTMLElement {
             <li>${esc(this._t("step_prepare_1"))}</li>
             <li>${esc(this._t("step_prepare_2"))}</li>
             <li>${esc(this._t("step_prepare_3"))}</li></ol>
-          <a class="link" href="https://kdeconnect.kde.org/download.html" target="_blank" rel="noreferrer">${esc(this._t("step_prepare_install"))} ${icon("mdi:open-in-new")}</a>
-          <p class="help">${esc(this._t("step_prepare_firewall"))}</p>`;
+          ${this._link(this._t("step_prepare_install"), "https://kdeconnect.kde.org/download.html", { iconName: "mdi:open-in-new", newTab: true })}
+          <p class="hint">${esc(this._t("step_prepare_firewall"))}</p>`;
         break;
       case "choose": {
         title = this._t("step_choose_title");
         const found = this._state.discovered;
         const list = found.length
           ? `<div class="list bordered" role="radiogroup">${found
-              .map(
-                (d) => `<label class="row clickable ${wiz.selected === d.device_id ? "selected" : ""}">
-                <span class="row-icon">${icon(typeIcon(d.type))}</span>
-                <span class="row-text"><span class="headline">${esc(d.name)}</span>
-                <span class="supporting">${d.host ? esc(d.host) + " · " : ""}${esc(this._t(d.reachable ? "reachable" : "not_reachable"))}</span></span>
-                <span class="row-end"><input type="radio" name="pick" data-field="pick" value="${esc(d.device_id)}" ${wiz.selected === d.device_id ? "checked" : ""}></span></label>`
+              .map((d) =>
+                this._row({
+                  iconName: typeIcon(d.type),
+                  headline: d.name,
+                  supporting: `${d.host ? esc(d.host) + " · " : ""}${esc(this._t(d.reachable ? "reachable" : "not_reachable"))}`,
+                  end: icon(wiz.selected === d.device_id ? "mdi:radiobox-marked" : "mdi:radiobox-blank"),
+                  action: "pick",
+                  data: { id: d.device_id },
+                  selected: wiz.selected === d.device_id,
+                })
               )
               .join("")}</div>`
           : "";
         content = `<p>${esc(this._t("step_choose_text"))}</p>${list}
-          <div class="searching"><span class="spinner small"></span>${esc(this._t("searching"))}</div>
-          <details class="manual" ${wiz.manualOpen ? "open" : ""}><summary data-action="manual-toggle">${esc(this._t("manual_title"))}</summary>
-            <p class="help">${esc(this._t("manual_text"))}</p>
-            <div class="inline-form"><div class="field grow"><label for="wiz-host">${esc(this._t("ip_address"))}</label>
-            <input id="wiz-host" data-field="wiz.manualHost" data-enter="manual" value="${esc(wiz.manualHost)}" placeholder="192.168.1.20" inputmode="decimal" autocomplete="off"></div>
-            ${this._button(this._t("connect"), "manual", { appearance: "outlined", busy: this._busy.has("manual") })}</div>
-          </details>`;
+          <div class="searching"><ha-spinner size="tiny"></ha-spinner>${esc(this._t("searching"))}</div>
+          <div class="manual">
+            <button type="button" class="disclosure" data-action="manual-toggle" aria-expanded="${wiz.manualOpen}">
+              ${icon(wiz.manualOpen ? "mdi:chevron-up" : "mdi:chevron-down")}${esc(this._t("manual_title"))}</button>
+            ${wiz.manualOpen ? `<p class="hint">${esc(this._t("manual_text"))}</p>
+              <div class="inline-form">${this._textField({ id: "wiz-host", field: "wiz.manualHost", enter: "manual", label: this._t("ip_address"), value: wiz.manualHost, placeholder: "192.168.1.20" })}
+              ${this._button(this._t("connect"), "manual", { appearance: "outlined", busy: this._busy.has("manual") })}</div>` : ""}
+          </div>`;
         next.disabled = !wiz.selected;
         break;
       }
@@ -1088,13 +1225,13 @@ class KdeForHomeAssistantPanel extends HTMLElement {
             not_connected: "pair_error_not_connected",
           }[pair.error] || "pair_error_other";
           content = `${this._alert("error", esc(this._t(key, { name })))}
-            <div class="actions-row">${this._button(this._t("try_again"), "wiz-retry", { appearance: "outlined", iconName: "mdi:refresh" })}</div>`;
+            <div class="actions-row">${this._button(this._t("try_again"), "wiz-retry", { appearance: "filled", iconName: "mdi:refresh" })}</div>`;
         } else if (!pair.key) {
-          content = `<div class="waiting"><span class="spinner"></span><p>${esc(this._t("pair_sending", { name }))}</p></div>`;
+          content = `<div class="waiting"><ha-spinner size="small"></ha-spinner><p>${esc(this._t("pair_sending", { name }))}</p></div>`;
         } else {
           content = `<p>${esc(this._t("pair_text", { name }))}</p>
             <div class="key big">${esc(pair.key)}</div>
-            <div class="waiting"><span class="spinner small"></span><p>${esc(this._t("pair_waiting", { name }))}</p></div>`;
+            <div class="waiting"><ha-spinner size="tiny"></ha-spinner><p>${esc(this._t("pair_waiting", { name }))}</p></div>`;
         }
         break;
       }
@@ -1104,15 +1241,19 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         const connected = d?.connected;
         let list;
         if (!connected) {
-          list = `<div class="waiting"><span class="spinner small"></span><p>${esc(this._t("waiting_connect", { name }))}</p></div>`;
+          list = `<div class="waiting"><ha-spinner size="tiny"></ha-spinner><p>${esc(this._t("waiting_connect", { name }))}</p></div>`;
         } else if (!d.commands.length) {
-          list = `<div class="inline-empty"><b>${esc(this._t("no_commands"))}</b><br>${esc(this._t("no_commands_text", { name }))}</div>`;
+          list = `<div class="inline-empty bordered"><b>${esc(this._t("no_commands"))}</b><br>${esc(this._t("no_commands_text", { name }))}</div>`;
         } else {
           list = `<div class="list bordered">${d.commands
-            .map(
-              (c) => `<div class="row"><span class="row-icon">${icon("mdi:gesture-tap-button")}</span>
-              <span class="row-text"><span class="headline">${esc(c.name)}</span>${c.command ? `<span class="supporting mono">${esc(c.command)}</span>` : ""}</span>
-              <span class="row-end">${icon("mdi:check")}</span></div>`
+            .map((c) =>
+              this._row({
+                iconName: "mdi:gesture-tap-button",
+                headline: c.name,
+                supporting: c.command ? esc(c.command) : "",
+                supportingMono: true,
+                end: icon("mdi:check"),
+              })
             )
             .join("")}</div>`;
         }
@@ -1127,37 +1268,47 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         content = `<p>${esc(this._t("step_scripts_text", { name }))}</p>${
           scripts.length
             ? `<div class="list bordered">${scripts
-                .map(
-                  (s) => `<label class="row clickable"><span class="row-icon">${icon("mdi:script-text-outline")}</span>
-                  <span class="row-text"><span class="headline">${esc(s.name)}</span><span class="supporting mono">${esc(s.entity_id)}</span></span>
-                  <span class="row-end"><input type="checkbox" class="switch" data-field="wizScript" value="${esc(s.entity_id)}" ${wiz.scripts.includes(s.entity_id) ? "checked" : ""}></span></label>`
+                .map((s) =>
+                  this._row({
+                    iconName: "mdi:script-text-outline",
+                    headline: s.name,
+                    supporting: esc(s.entity_id),
+                    supportingMono: true,
+                    end: `<ha-switch data-field="wizScript" data-value="${esc(s.entity_id)}" ${wiz.scripts.includes(s.entity_id) ? "checked" : ""}></ha-switch>`,
+                  })
                 )
                 .join("")}</div>`
-            : `<div class="inline-empty"><b>${esc(this._t("no_scripts"))}</b><br>${esc(this._t("no_scripts_text"))}</div>`
-        }<div class="actions-row start"><a class="btn outlined brand" href="/config/script/edit/new" target="_blank">${icon("mdi:plus")}<span>${esc(this._t("create_script"))}</span></a></div>`;
+            : `<div class="inline-empty bordered"><b>${esc(this._t("no_scripts"))}</b><br>${esc(this._t("no_scripts_text"))}</div>`
+        }<div class="actions-row start">${this._link(this._t("create_script"), "/config/script/edit/new", { iconName: "mdi:plus", newTab: true })}</div>`;
         break;
       }
       case "wake":
         title = this._t("step_wake_title");
         skip = true;
         content = `<p>${esc(this._t("step_wake_text", { name }))}</p>
-          <div class="field"><label for="wiz-mac">${esc(this._t("mac_label"))}</label>
-          <input id="wiz-mac" data-field="wiz.mac" data-enter="wiz-next" value="${esc(wiz.mac)}" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" spellcheck="false">
-          <div class="help">${esc(this._t("mac_help"))}</div></div>`;
+          ${this._textField({ id: "wiz-mac", field: "wiz.mac", enter: "wiz-next", label: this._t("mac_label"), value: wiz.mac, hint: this._t("mac_help"), placeholder: "AA:BB:CC:DD:EE:FF", mono: true })}`;
         break;
       case "done": {
         title = this._t("step_done_title", { name });
         back = false;
         next.label = this._t("finish");
         const d = this._device(wiz.subentryId);
-        const ids = d ? Object.values(d.entities).concat(d.commands.map((c) => c.entity_id).filter(Boolean)) : [];
+        const ids = d
+          ? Object.values(d.entities).concat(d.commands.map((c) => c.entity_id).filter(Boolean))
+          : [];
         content = `<div class="done-icon">${icon("mdi:check-circle")}</div><p class="center-text">${esc(this._t("step_done_text"))}</p>
           ${ids.length ? `<div class="list bordered">${ids
             .map((entityId) => {
               const st = this._hass.states[entityId];
-              return `<button class="row clickable" data-action="more-info" data-entity="${esc(entityId)}">
-                <span class="row-text"><span class="headline">${esc(st?.attributes?.friendly_name || entityId)}</span><span class="supporting mono">${esc(entityId)}</span></span>
-                <span class="row-end">${icon("mdi:chevron-right")}</span></button>`;
+              return this._row({
+                iconName: st?.attributes?.icon || this._domainIcon(entityId),
+                headline: st?.attributes?.friendly_name || entityId,
+                supporting: esc(entityId),
+                supportingMono: true,
+                end: icon("mdi:chevron-right"),
+                action: "more-info",
+                data: { entity: entityId },
+              });
             })
             .join("")}</div>` : ""}`;
         break;
@@ -1171,22 +1322,23 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         ${next.show ? this._button(next.label, "wiz-next", { disabled: next.disabled, busy: this._busy.has("next") }) : ""}</div></div>`;
 
     return `${this._toolbar(this._t("wizard_title"), { close: true })}
-      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${index + 1}"><div class="progress-fill" style="width:${progress}%"></div></div>
+      <div class="progress" role="progressbar" aria-label="${esc(this._t("step_of", { step: index + 1, total: steps.length }))}" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${index + 1}"><div class="progress-fill" style="width:${progress}%"></div></div>
       <div class="content"><div class="container narrow">
-        <div class="card wizard">
+        <ha-card class="wizard"><div class="wizard-body">
           <div class="step-label">${esc(this._t("step_of", { step: index + 1, total: steps.length }))}</div>
           <h1>${esc(title)}</h1>
           ${wiz.step === "commands" ? "" : this._notices()}${error}${content}
           ${footer}
-        </div>
+        </div></ha-card>
       </div></div>`;
   }
 }
 
+// Layout only; the components bring their own Home Assistant styling.
 const STYLES = `
 :host {
   display: block;
-  height: 100%;
+  min-height: 100%;
   background: var(--primary-background-color);
   color: var(--primary-text-color);
   font-family: var(--ha-font-family-body, Roboto, Noto, sans-serif);
@@ -1199,7 +1351,6 @@ const STYLES = `
   --kde-space-4: var(--ha-space-4, 16px);
   --kde-space-6: var(--ha-space-6, 24px);
   --kde-space-8: var(--ha-space-8, 32px);
-  --kde-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg, 12px));
 }
 * { box-sizing: border-box; }
 .toolbar {
@@ -1212,119 +1363,75 @@ const STYLES = `
 }
 .main-title {
   margin-inline-start: var(--kde-space-3); font-size: var(--ha-font-size-xl, 20px);
-  font-weight: var(--ha-font-weight-normal, 400); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.icon-button {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 48px; height: 48px; border: none; border-radius: 50%;
-  background: none; color: inherit; cursor: pointer;
-}
-.icon-button:hover { background: rgba(127, 127, 127, 0.15); }
-.icon-button:focus-visible, .btn:focus-visible, .row.clickable:focus-visible, input:focus-visible, summary:focus-visible {
-  outline: 2px solid var(--primary-color); outline-offset: 2px;
-}
-.progress { height: 4px; background: var(--divider-color, rgba(127,127,127,0.2)); position: sticky; top: var(--header-height, 56px); z-index: 2; }
+.progress { height: 4px; background: var(--divider-color); position: sticky; top: var(--header-height, 56px); z-index: 2; }
 .progress-fill { height: 100%; background: var(--primary-color); transition: width 0.3s ease; }
-@media (prefers-reduced-motion: reduce) { .progress-fill { transition: none; } .spinner { animation-duration: 3s; } }
+@media (prefers-reduced-motion: reduce) { .progress-fill { transition: none; } }
 .content { padding: var(--kde-space-4); }
 .content.center { display: flex; justify-content: center; padding-top: 20vh; }
 .container { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--kde-space-4); }
 .container.narrow { max-width: 600px; }
-.card {
-  background: var(--ha-card-background, var(--card-background-color, #fff));
-  border-radius: var(--kde-radius);
-  border: 1px solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
-  box-shadow: var(--ha-card-box-shadow, none);
-  overflow: hidden;
-}
-.card-header { font-size: var(--ha-font-size-2xl, 24px); padding: var(--kde-space-4) var(--kde-space-4) var(--kde-space-2); line-height: var(--ha-line-height-condensed, 1.2); }
+ha-card { display: block; overflow: hidden; }
+.card-content { padding: 0 var(--kde-space-4) var(--kde-space-2); }
 .card-text { margin: 0; padding: 0 var(--kde-space-4) var(--kde-space-2); color: var(--secondary-text-color); }
 .card-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--kde-space-2); padding: var(--kde-space-2) var(--kde-space-4) var(--kde-space-4); }
 .card-actions.start { justify-content: flex-start; }
-.card > .alert { margin: 0 var(--kde-space-4) var(--kde-space-4); }
-.card > .field { padding: 0 var(--kde-space-4); }
-.card.empty { text-align: center; padding: var(--kde-space-8) var(--kde-space-6); }
-.card.empty h2 { font-size: var(--ha-font-size-xl, 20px); font-weight: var(--ha-font-weight-medium, 500); margin: var(--kde-space-4) 0 var(--kde-space-2); }
-.card.empty p { color: var(--secondary-text-color); margin: 0 auto var(--kde-space-6); max-width: 420px; }
+.empty { text-align: center; padding: var(--kde-space-8) var(--kde-space-6); }
+.empty h2 { font-size: var(--ha-font-size-xl, 20px); font-weight: var(--ha-font-weight-medium, 500); margin: var(--kde-space-4) 0 var(--kde-space-2); }
+.empty p { color: var(--secondary-text-color); margin: 0 auto var(--kde-space-6); max-width: 420px; }
 .empty-icon { color: var(--secondary-text-color); --mdc-icon-size: 64px; }
 .list { display: flex; flex-direction: column; }
-.list.bordered { border: 1px solid var(--divider-color); border-radius: var(--ha-border-radius-md, 8px); overflow: hidden; margin: var(--kde-space-2) 0; }
+.bordered { border: 1px solid var(--divider-color); border-radius: var(--ha-border-radius-md, 8px); overflow: hidden; margin: var(--kde-space-2) 0; }
 .list.bordered .row + .row { border-top: 1px solid var(--divider-color); }
 .row {
   display: flex; align-items: center; gap: var(--kde-space-4); min-height: 56px; width: 100%;
   padding: var(--kde-space-2) var(--kde-space-4); border: none; background: none; color: inherit;
-  font: inherit; text-align: start; text-decoration: none;
+  font: inherit; text-align: start;
 }
 .row.clickable { cursor: pointer; }
-.row.clickable:hover { background: var(--secondary-background-color, rgba(127,127,127,0.08)); }
+.row.clickable:hover { background: var(--secondary-background-color); }
+.row.clickable:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
 .row.selected { background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.12); }
+.row.selected .row-end { color: var(--primary-color); }
 .row-icon { color: var(--state-icon-color, var(--secondary-text-color)); display: flex; }
 .row-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .headline { font-size: var(--ha-font-size-l, 16px); overflow: hidden; text-overflow: ellipsis; }
-.supporting { color: var(--secondary-text-color); font-size: var(--ha-font-size-m, 14px); display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.supporting { color: var(--secondary-text-color); font-size: var(--ha-font-size-m, 14px); overflow-wrap: anywhere; }
 .mono { font-family: var(--ha-font-family-code, ui-monospace, monospace); font-size: var(--ha-font-size-s, 12px); }
 .row-end { display: flex; align-items: center; color: var(--secondary-text-color); }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--secondary-text-color); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--disabled-text-color, #9e9e9e); flex: none; }
 .dot.on { background: var(--success-color, #4caf50); }
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--kde-space-2);
-  height: 40px; padding: 0 var(--kde-space-4); border-radius: var(--ha-border-radius-pill, 9999px);
-  font: inherit; font-weight: var(--ha-font-weight-medium, 500); cursor: pointer; text-decoration: none;
-  border: 1px solid transparent; --mdc-icon-size: 18px; white-space: nowrap;
-}
-.btn.accent { background: var(--btn-color); color: var(--text-primary-color, #fff); }
-.btn.accent:hover { filter: brightness(1.08); }
-.btn.outlined { background: none; color: var(--btn-color); border-color: var(--btn-color); }
-.btn.plain { background: none; color: var(--btn-color); }
-.btn.outlined:hover, .btn.plain:hover { background: rgba(127,127,127,0.1); }
-.btn.brand { --btn-color: var(--primary-color); }
-.btn.danger { --btn-color: var(--error-color, #db4437); }
-.btn[disabled] { opacity: 0.5; cursor: default; pointer-events: none; }
-.alert {
-  display: flex; align-items: flex-start; gap: var(--kde-space-3); padding: var(--kde-space-3) var(--kde-space-4);
-  border-radius: var(--ha-border-radius-md, 8px); flex-wrap: wrap;
-  background: color-mix(in srgb, var(--alert-color) 12%, transparent);
-}
-.alert > ha-icon { color: var(--alert-color); flex: none; }
-.alert-text { flex: 1; min-width: 200px; }
-.alert-actions { display: flex; gap: var(--kde-space-2); margin-inline-start: auto; align-self: flex-end; }
-.alert.info { --alert-color: var(--info-color, #039be5); }
-.alert.warning { --alert-color: var(--warning-color, #ffa600); }
-.alert.error { --alert-color: var(--error-color, #db4437); }
-.alert.success { --alert-color: var(--success-color, #43a047); }
+ha-alert { display: block; }
+.alert-actions { display: flex; gap: var(--kde-space-2); flex-wrap: wrap; }
 .key { font-family: var(--ha-font-family-code, ui-monospace, monospace); font-size: var(--ha-font-size-xl, 20px); letter-spacing: 0.15em; margin-top: var(--kde-space-2); }
 .key.big {
   font-size: var(--ha-font-size-4xl, 32px); text-align: center; padding: var(--kde-space-4);
   margin: var(--kde-space-4) 0; border-radius: var(--ha-border-radius-md, 8px);
-  background: var(--secondary-background-color, rgba(127,127,127,0.08));
+  background: var(--secondary-background-color);
 }
-.field { display: flex; flex-direction: column; gap: var(--kde-space-1); margin: var(--kde-space-2) 0; }
-.field.grow { flex: 1; margin: 0; }
-.field label { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); }
-.field input {
-  height: 48px; padding: 0 var(--kde-space-3); font: inherit; font-size: var(--ha-font-size-l, 16px);
-  color: var(--primary-text-color); background: var(--input-fill-color, var(--secondary-background-color, rgba(127,127,127,0.08)));
-  border: none; border-bottom: 1px solid var(--input-idle-line-color, var(--secondary-text-color));
-  border-radius: var(--ha-border-radius-sm, 4px) var(--ha-border-radius-sm, 4px) 0 0;
-}
-.field input:focus { outline: none; border-bottom: 2px solid var(--primary-color); }
-.help { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); }
-.inline-form { display: flex; align-items: flex-end; gap: var(--kde-space-3); flex-wrap: wrap; }
+.text-field { display: block; width: 100%; margin: var(--kde-space-2) 0; }
+.inline-form { display: flex; align-items: center; gap: var(--kde-space-3); flex-wrap: wrap; }
+.inline-form .text-field { flex: 1; min-width: 200px; }
+.hint { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); }
 .inline-empty { padding: var(--kde-space-4); color: var(--secondary-text-color); text-align: center; }
-.wizard { padding: var(--kde-space-6); }
+a.button-link { text-decoration: none; }
+.wizard-body { padding: var(--kde-space-6); }
 .wizard h1 { font-size: var(--ha-font-size-2xl, 24px); font-weight: var(--ha-font-weight-normal, 400); margin: 0 0 var(--kde-space-4); line-height: var(--ha-line-height-condensed, 1.2); }
 .wizard p { margin: 0 0 var(--kde-space-3); }
-.card.wizard > .alert { margin: 0 0 var(--kde-space-4); }
-.step-label { color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px); margin-bottom: var(--kde-space-1); text-transform: none; }
+.wizard ha-alert { margin-bottom: var(--kde-space-4); }
+.step-label { color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px); margin-bottom: var(--kde-space-1); }
 .steps { padding-inline-start: var(--kde-space-6); margin: 0 0 var(--kde-space-4); }
 .steps li { margin-bottom: var(--kde-space-2); }
-.link { color: var(--primary-color); display: inline-flex; align-items: center; gap: var(--kde-space-1); --mdc-icon-size: 16px; text-decoration: none; font-weight: var(--ha-font-weight-medium, 500); }
-.link:hover { text-decoration: underline; }
 .searching, .waiting { display: flex; align-items: center; gap: var(--kde-space-3); color: var(--secondary-text-color); margin: var(--kde-space-3) 0; }
 .waiting p { margin: 0; }
-.manual { margin-top: var(--kde-space-4); border-top: 1px solid var(--divider-color); padding-top: var(--kde-space-3); }
-.manual summary { cursor: pointer; color: var(--primary-color); font-weight: var(--ha-font-weight-medium, 500); padding: var(--kde-space-1) 0; }
-.manual .help { margin: var(--kde-space-2) 0; }
+.manual { margin-top: var(--kde-space-4); border-top: 1px solid var(--divider-color); padding-top: var(--kde-space-2); }
+.disclosure {
+  display: inline-flex; align-items: center; gap: var(--kde-space-1); border: none; background: none; padding: var(--kde-space-2) 0;
+  color: var(--primary-color); font: inherit; font-weight: var(--ha-font-weight-medium, 500); cursor: pointer;
+}
+.disclosure:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 4px; }
 .actions-row { display: flex; justify-content: flex-end; gap: var(--kde-space-2); flex-wrap: wrap; margin-top: var(--kde-space-3); }
 .actions-row.start { justify-content: flex-start; }
 .wizard-footer { display: flex; justify-content: space-between; align-items: center; gap: var(--kde-space-2); margin-top: var(--kde-space-6); padding-top: var(--kde-space-4); border-top: 1px solid var(--divider-color); }
@@ -1332,31 +1439,11 @@ const STYLES = `
 .done-icon { text-align: center; color: var(--success-color, #43a047); --mdc-icon-size: 72px; margin: var(--kde-space-2) 0 var(--kde-space-4); }
 .center-text { text-align: center; }
 .device-head { display: flex; align-items: center; gap: var(--kde-space-4); padding: var(--kde-space-4); }
-.big-icon { --mdc-icon-size: 40px; color: var(--state-icon-color, var(--secondary-text-color)); }
+.big-icon { --mdc-icon-size: 40px; color: var(--state-icon-color, var(--secondary-text-color)); display: flex; }
 .device-name { font-size: var(--ha-font-size-xl, 20px); }
-.spinner {
-  width: 40px; height: 40px; border-radius: 50%; flex: none;
-  border: 4px solid color-mix(in srgb, var(--primary-color) 20%, transparent); border-top-color: var(--primary-color);
-  animation: spin 0.9s linear infinite;
-}
-.spinner.small { width: 18px; height: 18px; border-width: 2px; }
-.btn.accent .spinner { border-color: rgba(255,255,255,0.35); border-top-color: currentColor; }
-@keyframes spin { to { transform: rotate(360deg); } }
-input[type="radio"] { width: 20px; height: 20px; accent-color: var(--primary-color); cursor: pointer; }
-input.switch {
-  appearance: none; -webkit-appearance: none; width: 36px; height: 14px; border-radius: 7px; position: relative; cursor: pointer;
-  background: var(--switch-unchecked-track-color, rgba(127,127,127,0.5)); margin: 0 4px;
-}
-input.switch::after {
-  content: ""; position: absolute; top: -3px; left: -4px; width: 20px; height: 20px; border-radius: 50%;
-  background: var(--switch-unchecked-button-color, #fafafa); box-shadow: 0 1px 3px rgba(0,0,0,0.4); transition: left 0.15s;
-}
-input.switch:checked { background: color-mix(in srgb, var(--switch-checked-color, var(--primary-color)) 50%, transparent); }
-input.switch:checked::after { left: 20px; background: var(--switch-checked-button-color, var(--primary-color)); }
-input.switch:disabled { opacity: 0.5; }
 @media (max-width: 600px) {
   .content { padding: var(--kde-space-2); }
-  .wizard { padding: var(--kde-space-4); }
+  .wizard-body { padding: var(--kde-space-4); }
   .key.big { font-size: var(--ha-font-size-3xl, 28px); }
 }
 `;

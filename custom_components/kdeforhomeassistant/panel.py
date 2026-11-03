@@ -38,7 +38,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         webcomponent_name=PANEL_ELEMENT,
         module_url=f"{PANEL_STATIC_URL}/kde-panel.js?v={version}",
         sidebar_title="KDE for Home Assistant",
-        sidebar_icon="mdi:kde",
+        sidebar_icon="mdi:monitor-cellphone",
         require_admin=True,
         config={},
     )
