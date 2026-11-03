@@ -300,3 +300,24 @@ async def _import_legacy(hass: HomeAssistant, legacy, peer: FakeDevice) -> None:
     assert hass.states.get("binary_sensor.old_pc_connected").state == "on"
     peer.close()
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_no_pair_ping_pong(hass: HomeAssistant) -> None:
+    """A paired device that re-sends "pair" gets one answer, not an endless loop.
+
+    KDE Connect answers a "pair" from a device it already trusts with its own
+    "pair", just like we do, so answering every time keeps both busy forever.
+    """
+    entry = await _setup(hass)
+    device = FakeDevice("Fake PC", protocol_version=8)
+    await _pair(hass, entry, device)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    await device.connect(entry.runtime_data.hub.tcp_port)
+    await device.wait_for(PACKET_TYPE_RUNCOMMAND_REQUEST, requestCommandList=True)
+
+    device.packets.clear()
+    device.send(Packet(PACKET_TYPE_PAIR, {"pair": True}))
+    await device.wait_for(PACKET_TYPE_PAIR, pair=True)
+    await asyncio.sleep(0.5)
+    assert sum(p.type == PACKET_TYPE_PAIR for p in device.packets) == 1
+    device.close()

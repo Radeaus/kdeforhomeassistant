@@ -273,6 +273,7 @@ class KdeConnectHub:
         self._pairings: dict[str, PendingPairing] = {}
         self.incoming: dict[str, IncomingPairing] = {}
         self._answered: dict[str, float] = {}
+        self._pair_answered: dict[str, float] = {}
         self._packet_listeners: dict[str, list[PacketListener]] = {}
         self._connection_listeners: dict[str, list[ConnectionListener]] = {}
         self._discovery_listeners: list[Callable[[], None]] = []
@@ -489,7 +490,13 @@ class KdeConnectHub:
                     self._notify_connection(device_id, True)
             elif device_id in self._trusted:
                 # The device forgot us but we still trust its certificate.
-                link.send(Packet(PACKET_TYPE_PAIR, {"pair": True}))
+                # A device that still trusts us answers our "pair" with its
+                # own, so only answer once in a while or the two of us
+                # bounce it back and forth as fast as the network allows.
+                now = time.monotonic()
+                if now - self._pair_answered.get(device_id, -PAIR_TIMEOUT) >= PAIR_TIMEOUT:
+                    self._pair_answered[device_id] = now
+                    link.send(Packet(PACKET_TYPE_PAIR, {"pair": True}))
             else:
                 self._add_incoming(link, packet)
             return
