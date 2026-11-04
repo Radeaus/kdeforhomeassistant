@@ -32,6 +32,8 @@ You can also select **Pair** in KDE Connect on the device itself. Home Assistant
 
 The sidebar page also lets you manage each device: run its commands, add new commands on the device, share scripts, set the MAC address for Wake-on-LAN, and remove it.
 
+Not sure which commands to use? On a computer's page, select **Which buttons can I make?**. Choose your Linux distribution and the buttons you want (shut down, sleep, volume, ...), and the page writes a prompt to paste into any AI chat. The AI answers with a table of names and commands to add under *Run commands* in KDE Connect.
+
 Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Setup can take over its pairings. Remove that integration first, since both need the same ports.
 
 ## Requirements
