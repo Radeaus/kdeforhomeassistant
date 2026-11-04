@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/icon.svg" alt="" width="96" height="96"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Radeaus/kdeforhomeassistant/main/custom_components/kdeforhomeassistant/brand/icon.png" alt="KDE for Home Assistant logo" width="96" height="96"></p>
 
 # KDE for Home Assistant
 
