@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon.svg" alt="" width="96" height="96"></p>
+
 # KDE for Home Assistant
 
 A Home Assistant integration that speaks the [KDE Connect](https://kdeconnect.kde.org/) protocol. Home Assistant joins your network as a regular KDE Connect device, so your PCs and phones only need the normal KDE Connect app.
@@ -32,7 +34,9 @@ You can also select **Pair** in KDE Connect on the device itself. Home Assistant
 
 The sidebar page also lets you manage each device: run its commands, add new commands on the device, share scripts, set the MAC address for Wake-on-LAN, and remove it.
 
-Not sure which commands to use? On a computer's page, select **Which buttons can I make?**. Choose your Linux distribution and the buttons you want (shut down, sleep, volume, ...), and the page writes a prompt to paste into any AI chat. The AI answers with a table of names and commands to add under *Run commands* in KDE Connect.
+Not sure which commands to use? On a computer's page, select **Which buttons can I make?**. Choose your Linux distribution and the buttons you want (shut down, sleep, volume, ...), and the page writes a prompt to paste into any AI chat. The AI answers with a table of names and commands, and if it can, a file to load with *Import* under *Run commands* in KDE Connect. Import replaces the commands already in the list.
+
+The built-in ring and screen lock do not work on every desktop (on Cinnamon, for example, there is no ring sound and the lock state is never reported). A run command named **Lock screen**, **Unlock screen** or **Ring** (or Dutch: *Scherm vergrendelen*, *Scherm ontgrendelen*, *Laten rinkelen*) takes over that button and the screen lock entity. The button helper uses these names.
 
 Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Setup can take over its pairings. Remove that integration first, since both need the same ports.
 
@@ -59,6 +63,12 @@ sequence:
     target:
       entity_id: lock.my_pc_screen
 ```
+
+## Credits
+
+Inspired by [bartv2/kde_connect](https://github.com/bartv2/kde_connect), the original KDE Connect integration for Home Assistant by [bartv2](https://github.com/bartv2). Its approach of letting Home Assistant join the network as a KDE Connect device is where this project started.
+
+Thanks to the [KDE Connect](https://kdeconnect.kde.org/) team for the app and protocol this builds on.
 
 ## License
 
