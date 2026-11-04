@@ -180,6 +180,53 @@ async def test_pair_and_control(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_own_commands_take_over(hass: HomeAssistant) -> None:
+    """Run commands named after ring and lock replace the built-in way."""
+    entry = await _setup(hass)
+    device = FakeDevice("Fake PC", protocol_version=7)
+    device.commands = {
+        "l1": {"name": "Scherm vergrendelen", "command": "cinnamon-screensaver-command -l"},
+        "r1": {"name": " ring ", "command": "paplay ring.oga"},
+    }
+    await _pair(hass, entry, device)
+    await device.wait_for(PACKET_TYPE_PAIR, pair=True)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    device.packets.clear()
+    await device.connect(entry.runtime_data.hub.tcp_port)
+    await device.wait_for(PACKET_TYPE_RUNCOMMAND_REQUEST, requestCommandList=True)
+    await asyncio.sleep(0.2)
+    await hass.async_block_till_done()
+    assert hass.states.get("lock.fake_pc_screen").state == "unlocked"
+
+    # Lock runs the command and assumes the screen is locked now.
+    await hass.services.async_call(
+        "lock", "lock", {"entity_id": "lock.fake_pc_screen"}, blocking=True
+    )
+    await device.wait_for(PACKET_TYPE_RUNCOMMAND_REQUEST, key="l1")
+    await hass.async_block_till_done()
+    assert hass.states.get("lock.fake_pc_screen").state == "locked"
+    assert not any(
+        p.type == PACKET_TYPE_LOCK_REQUEST and "setLocked" in p.body
+        for p in device.packets
+    )
+
+    # No unlock command: unlocking falls back to the built-in way.
+    await hass.services.async_call(
+        "lock", "unlock", {"entity_id": "lock.fake_pc_screen"}, blocking=True
+    )
+    await device.wait_for(PACKET_TYPE_LOCK_REQUEST, setLocked=False)
+
+    await hass.services.async_call(
+        "button", "press", {"entity_id": "button.fake_pc_ring"}, blocking=True
+    )
+    await device.wait_for(PACKET_TYPE_RUNCOMMAND_REQUEST, key="r1")
+
+    device.close()
+    await asyncio.sleep(0.1)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_pair_protocol_8_and_decline(hass: HomeAssistant) -> None:
     """A protocol 8 device that declines pairing aborts the flow."""
     entry = await _setup(hass)

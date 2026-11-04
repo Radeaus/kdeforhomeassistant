@@ -139,9 +139,12 @@ const STRINGS = {
     helper_desktop_help: "Not sure? Keep Don't know.",
     helper_dont_know: "Don't know",
     helper_buttons: "Buttons you want",
-    helper_buttons_help: "Lock screen and Ring are already built in.",
+    helper_buttons_help:
+      "Lock screen, Unlock screen and Ring take over the buttons at the top of the computer's page. Keep these names exactly as they are.",
     helper_extra: "Anything else?",
-    helper_extra_hint: "For example: open Spotify, start a backup",
+    helper_extra_hint: "For example: open Spotify",
+    helper_extra_add: "Add another",
+    helper_extra_remove: "Remove",
     helper_prompt: "Your prompt",
     helper_prompt_text: "Copy the prompt and paste it into the AI of your choice.",
     helper_prompt_empty: "Choose your distribution and at least one button.",
@@ -150,12 +153,23 @@ const STRINGS = {
     helper_copy_failed: "Copying did not work. Select the text and copy it yourself.",
     helper_add: "Add the commands",
     helper_add_text:
-      "Add each row of the table in KDE Connect on {name}: the name and the command. The buttons then show up in Home Assistant.",
+      "Open the settings of Run commands in KDE Connect on {name}, click Import and choose the file the AI made. Did the AI not make a file? Then add each row of the table by hand: the name and the command.",
     helper_add_text_generic:
-      "In KDE Connect on your computer, open the plugin Run commands for Home Assistant and add each row of the table: the name and the command.",
+      "In KDE Connect on your computer, open the settings of the plugin Run commands, click Import and choose the file the AI made. Did the AI not make a file? Then add each row of the table by hand: the name and the command.",
+    helper_import_warning:
+      "Import replaces the commands that are already in the list. Want to keep them? Then add the new rows by hand instead.",
+    helper_done: "Finish",
+    helper_done_wizard: "Added the commands? Go back to the wizard to set up the rest.",
+    helper_done_device: "Added the commands? Go back to {name}. The new buttons show up there.",
+    helper_done_generic: "Added the commands? Go back to the overview.",
+    helper_done_button: "Done",
     btn_shutdown: "Shut down",
     btn_restart: "Restart",
     btn_sleep: "Sleep",
+    btn_lock: "Lock screen",
+    btn_unlock: "Unlock screen",
+    btn_ring: "Ring",
+    btn_ring_hint: "play a clear sound a few times, so I can find the computer",
     btn_logout: "Log out",
     btn_screen_off: "Turn off screen",
     btn_mute: "Mute",
@@ -295,9 +309,12 @@ const STRINGS = {
     helper_desktop_help: "Twijfel je? Laat dan Weet ik niet staan.",
     helper_dont_know: "Weet ik niet",
     helper_buttons: "Knoppen die je wilt",
-    helper_buttons_help: "Scherm vergrendelen en Laten rinkelen zitten er al in.",
+    helper_buttons_help:
+      "Scherm vergrendelen, Scherm ontgrendelen en Laten rinkelen nemen de knoppen bovenaan de pagina van je computer over. Houd die namen precies zo.",
     helper_extra: "Nog iets anders?",
-    helper_extra_hint: "Bijvoorbeeld: Spotify openen, back-up starten",
+    helper_extra_hint: "Bijvoorbeeld: Spotify openen",
+    helper_extra_add: "Nog een toevoegen",
+    helper_extra_remove: "Verwijderen",
     helper_prompt: "Je prompt",
     helper_prompt_text: "Kopieer de prompt en plak hem in de AI die je wilt gebruiken.",
     helper_prompt_empty: "Kies je distributie en minstens één knop.",
@@ -306,12 +323,23 @@ const STRINGS = {
     helper_copy_failed: "Kopiëren is niet gelukt. Selecteer de tekst en kopieer hem zelf.",
     helper_add: "Opdrachten toevoegen",
     helper_add_text:
-      "Zet elke rij uit de tabel in KDE Connect op {name}: de naam en de opdracht. De knoppen verschijnen dan in Home Assistant.",
+      "Open in KDE Connect op {name} de instellingen van Opdrachten uitvoeren (Run commands), klik op Importeren en kies het bestand dat de AI heeft gemaakt. Heeft de AI geen bestand gemaakt? Zet dan elke rij uit de tabel er met de hand in: de naam en de opdracht.",
     helper_add_text_generic:
-      "Open in KDE Connect op je computer de plug-in Opdrachten uitvoeren voor Home Assistant en zet elke rij uit de tabel erin: de naam en de opdracht.",
+      "Open in KDE Connect op je computer de instellingen van de plug-in Opdrachten uitvoeren (Run commands), klik op Importeren en kies het bestand dat de AI heeft gemaakt. Heeft de AI geen bestand gemaakt? Zet dan elke rij uit de tabel er met de hand in: de naam en de opdracht.",
+    helper_import_warning:
+      "Importeren vervangt de opdrachten die al in de lijst staan. Wil je die houden? Zet de nieuwe rijen er dan met de hand bij.",
+    helper_done: "Afronden",
+    helper_done_wizard: "Opdrachten toegevoegd? Ga terug naar de wizard om de rest in te stellen.",
+    helper_done_device: "Opdrachten toegevoegd? Ga terug naar {name}. Daar staan de nieuwe knoppen.",
+    helper_done_generic: "Opdrachten toegevoegd? Ga terug naar het overzicht.",
+    helper_done_button: "Klaar",
     btn_shutdown: "Afsluiten",
     btn_restart: "Herstarten",
     btn_sleep: "Slaapstand",
+    btn_lock: "Scherm vergrendelen",
+    btn_unlock: "Scherm ontgrendelen",
+    btn_ring: "Laten rinkelen",
+    btn_ring_hint: "een paar keer een duidelijk geluid afspelen, zodat ik de computer kan vinden",
     btn_logout: "Afmelden",
     btn_screen_off: "Scherm uit",
     btn_mute: "Geluid dempen",
@@ -323,6 +351,10 @@ const STRINGS = {
     btn_browser: "Browser openen",
   },
 };
+
+// These buttons take over ring and lock at the top of a device page; the
+// integration finds them by name (OWN_COMMAND_NAMES in device.py).
+const OWN_BUTTONS = ["lock", "unlock", "ring"];
 
 // Button helper: choices and the prompt it writes for an AI chat.
 const DISTROS = [
@@ -344,6 +376,9 @@ const HELPER_BUTTONS = [
   "shutdown",
   "restart",
   "sleep",
+  "lock",
+  "unlock",
+  "ring",
   "logout",
   "screen_off",
   "mute",
@@ -357,7 +392,7 @@ const HELPER_BUTTONS = [
 const HELPER_STORAGE = "kdeforhomeassistant-helper";
 
 const PROMPTS = {
-  en: ({ distro, desktop, buttons }) =>
+  en: ({ distro, desktop, buttons, fixed }) =>
     [
       "I want to control my Linux computer from Home Assistant with KDE Connect. In KDE Connect I can add my own commands under \"Run commands\". Every command becomes a button in Home Assistant.",
       "",
@@ -372,6 +407,9 @@ const PROMPTS = {
       "- KDE Connect runs each command as my own user with /bin/sh -c, without a terminal window.",
       "- No sudo and nothing that asks for a password or input. Use commands that work without a password, such as systemctl or loginctl.",
       "- One line per command.",
+      ...(fixed.length
+        ? [`- Use exactly these names: ${fixed.join(", ")}. Home Assistant recognises these buttons by their name.`]
+        : []),
       `- Prefer programs that come with ${distro}. If something has to be installed, say so.`,
       "- If it matters, make the command work on both X11 and Wayland.",
       "",
@@ -379,8 +417,10 @@ const PROMPTS = {
       "1. A table with the columns Name | Command | What it does. Name is the short button name for Home Assistant. Put each command in a code span; write a | inside a command as \\|.",
       "2. Only if something has to be installed: one install command for the terminal.",
       "3. Only if a command needs a setting changed first: one short line about it.",
+      "",
+      "Then make a file kdeconnect-commands.json that I can import in KDE Connect (Run commands > Import). The file holds a JSON array with one object per row of the table, with exactly the keys \"name\" and \"command\", for example: [{\"name\": \"Shut down\", \"command\": \"systemctl poweroff\"}]. Give it as a file I can download. If you can't make files, say so honestly in one sentence; I'll then copy the commands from the table by hand.",
     ].join("\n"),
-  nl: ({ distro, desktop, buttons }) =>
+  nl: ({ distro, desktop, buttons, fixed }) =>
     [
       "Ik wil mijn Linux-computer bedienen vanuit Home Assistant met KDE Connect. In KDE Connect kan ik onder \"Opdrachten uitvoeren\" (Run commands) zelf opdrachten toevoegen. Elke opdracht wordt een knop in Home Assistant.",
       "",
@@ -395,6 +435,9 @@ const PROMPTS = {
       "- KDE Connect voert elke opdracht uit als mijn eigen gebruiker met /bin/sh -c, zonder terminalvenster.",
       "- Geen sudo en niets dat om een wachtwoord of invoer vraagt. Gebruik opdrachten die zonder wachtwoord werken, zoals systemctl of loginctl.",
       "- Eén regel per opdracht.",
+      ...(fixed.length
+        ? [`- Gebruik precies deze namen: ${fixed.join(", ")}. Home Assistant herkent deze knoppen aan hun naam.`]
+        : []),
       `- Gebruik bij voorkeur programma's die standaard op ${distro} staan. Moet er iets geïnstalleerd worden, zeg dat dan.`,
       "- Als het uitmaakt: zorg dat de opdracht werkt op zowel X11 als Wayland.",
       "",
@@ -402,11 +445,13 @@ const PROMPTS = {
       "1. Een tabel met de kolommen Naam | Opdracht | Wat het doet. Naam is de korte knopnaam voor Home Assistant. Zet elke opdracht in een codeblokje; schrijf een | in een opdracht als \\|.",
       "2. Alleen als er iets geïnstalleerd moet worden: één installatieopdracht voor de terminal.",
       "3. Alleen als er eerst een instelling aangepast moet worden: één korte regel daarover.",
+      "",
+      "Maak daarna een bestand kdeconnect-commands.json dat ik in KDE Connect kan importeren (Opdrachten uitvoeren > Importeren). Het bestand bevat een JSON-array met één object per rij uit de tabel, met precies de sleutels \"name\" en \"command\", bijvoorbeeld: [{\"name\": \"Afsluiten\", \"command\": \"systemctl poweroff\"}]. Geef het als bestand dat ik kan downloaden. Kun je geen bestanden maken, zeg dat dan eerlijk in één zin; dan kopieer ik de opdrachten zelf uit de tabel.",
     ].join("\n"),
 };
 
 const loadHelper = () => {
-  const helper = { distro: null, distroOther: "", desktop: null, buttons: [], extra: "", copied: false };
+  const helper = { distro: null, distroOther: "", desktop: null, buttons: [], extras: [""], copied: false };
   try {
     const saved = JSON.parse(localStorage.getItem(HELPER_STORAGE) || "{}");
     if (typeof saved.distro === "string") helper.distro = saved.distro;
@@ -894,6 +939,10 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       this._wiz[field.slice(4)] = target.value ?? "";
     } else if (field.startsWith("edit.")) {
       this._edit[field.slice(5)] = target.value ?? "";
+    } else if (field.startsWith("helper.extra.")) {
+      const before = this._helperReady();
+      this._helper.extras[Number(field.slice(13))] = target.value ?? "";
+      this._helperChanged(before);
     } else if (field.startsWith("helper.")) {
       const before = this._helperReady();
       this._helper[field.slice(7)] = target.value ?? "";
@@ -954,6 +1003,23 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         this._helperChanged(null);
         return;
       }
+      case "helper-extra-add": {
+        const extras = this._helper.extras;
+        // Enter in an empty last field does not add yet another empty one.
+        if (extras.length && !extras[extras.length - 1].trim()) {
+          this._focus(`#helper-extra-${extras.length - 1}`);
+          return;
+        }
+        extras.push("");
+        this._render();
+        this._focus(`#helper-extra-${extras.length - 1}`);
+        return;
+      }
+      case "helper-extra-remove":
+        this._helper.extras.splice(Number(data.index), 1);
+        if (!this._helper.extras.length) this._helper.extras.push("");
+        this._helperChanged(null);
+        return;
       case "helper-copy":
         this._copyPrompt();
         return;
@@ -1100,9 +1166,12 @@ class KdeForHomeAssistantPanel extends HTMLElement {
   }
 
   _helperButtons() {
-    const list = this._helper.buttons.map((key) => this._t(`btn_${key}`));
-    const extra = this._helper.extra.trim();
-    if (extra) list.push(extra);
+    const list = this._helper.buttons.map((key) =>
+      key === "ring" ? `${this._t("btn_ring")} (${this._t("btn_ring_hint")})` : this._t(`btn_${key}`)
+    );
+    for (const extra of this._helper.extras) {
+      if (extra.trim()) list.push(extra.trim());
+    }
     return list;
   }
 
@@ -1116,6 +1185,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       distro: this._helperDistro(),
       desktop: this._helper.desktop,
       buttons: this._helperButtons(),
+      fixed: this._helper.buttons.filter((key) => OWN_BUTTONS.includes(key)).map((key) => `"${this._t(`btn_${key}`)}"`),
     });
   }
 
@@ -1396,7 +1466,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       <div class="card-actions start">
         ${ent.ring ? this._button(this._t("ring"), "press", { appearance: "filled", iconName: "mdi:bell-ring-outline", data: { entity: ent.ring }, disabled: !d.connected, busy: this._busy.has("press" + ent.ring) }) : ""}
         ${ent.screen_lock ? this._button(this._t(locked ? "unlock" : "lock"), locked ? "unlock" : "lock", { appearance: "filled", iconName: locked ? "mdi:lock-open-variant-outline" : "mdi:lock-outline", data: { entity: ent.screen_lock }, disabled: !d.connected, busy: this._busy.has("lock") || this._busy.has("unlock") }) : ""}
-        ${ent.wake ? this._button(this._t("turn_on"), "press", { appearance: "filled", iconName: "mdi:power", data: { entity: ent.wake }, busy: this._busy.has("press" + ent.wake) }) : ""}
+        ${ent.wake && !d.connected ? this._button(this._t("turn_on"), "press", { appearance: "filled", iconName: "mdi:power", data: { entity: ent.wake }, busy: this._busy.has("press" + ent.wake) }) : ""}
       </div></ha-card>`;
 
     const shown = d.commands.filter((c) => !c.hidden);
@@ -1524,6 +1594,20 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       ? `<p class="card-text">${esc(this._t("helper_add_text", { name: d.name }))}</p>
          <div class="card-actions">${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:cog-outline", data: { id: d.id, name: d.name }, disabled: !d.connected, busy: this._busy.has("setup" + d.id) })}</div>`
       : `<p class="card-text last">${esc(this._t("helper_add_text_generic"))}</p>`;
+    const extras = h.extras
+      .map((value, i) => {
+        const remove =
+          h.extras.length > 1
+            ? `<ha-icon-button data-action="helper-extra-remove" data-index="${i}" label="${esc(this._t("helper_extra_remove"))}">${icon("mdi:close")}</ha-icon-button>`
+            : "";
+        return `<div class="extra-row">${this._textField({ id: `helper-extra-${i}`, field: `helper.extra.${i}`, enter: "helper-extra-add", label: this._t("helper_extra"), value, placeholder: i === 0 ? this._t("helper_extra_hint") : "", maxlength: 120 })}${remove}</div>`;
+      })
+      .join("");
+    const doneText = this._wiz
+      ? this._t("helper_done_wizard")
+      : d
+        ? this._t("helper_done_device", { name: d.name })
+        : this._t("helper_done_generic");
 
     return `${this._toolbar(this._t("helper_title"), { back: "helper-back" })}
       <div class="content"><div class="container narrow">
@@ -1540,10 +1624,15 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         <ha-card header="2. ${esc(this._t("helper_buttons"))}"><div class="card-content">
           <p class="hint">${esc(this._t("helper_buttons_help"))}</p>
           <div class="choices">${buttons}</div>
-          ${this._textField({ id: "helper-extra", field: "helper.extra", label: this._t("helper_extra"), value: h.extra, placeholder: this._t("helper_extra_hint"), maxlength: 300 })}
+          ${extras}
+          <div class="actions-row start">${this._button(this._t("helper_extra_add"), "helper-extra-add", { appearance: "plain", iconName: "mdi:plus" })}</div>
         </div></ha-card>
         <ha-card header="3. ${esc(this._t("helper_prompt"))}">${prompt}</ha-card>
-        <ha-card header="4. ${esc(this._t("helper_add"))}">${add}</ha-card>
+        <ha-card header="4. ${esc(this._t("helper_add"))}">${add}
+          <div class="card-content">${this._alert("warning", esc(this._t("helper_import_warning")))}</div></ha-card>
+        <ha-card header="5. ${esc(this._t("helper_done"))}">
+          <p class="card-text">${esc(doneText)}</p>
+          <div class="card-actions">${this._button(this._t("helper_done_button"), "helper-back", { iconName: "mdi:check" })}</div></ha-card>
       </div></div>`;
   }
 
@@ -1857,6 +1946,8 @@ a.button-link { text-decoration: none; }
 .big-icon { --mdc-icon-size: 40px; color: var(--state-icon-color, var(--secondary-text-color)); display: flex; }
 .device-name { font-size: var(--ha-font-size-xl, 20px); }
 .intro { margin: 0; color: var(--secondary-text-color); }
+.extra-row { display: flex; align-items: center; gap: var(--kde-space-1); }
+.extra-row .text-field { flex: 1; min-width: 0; }
 .card-text.last { padding-bottom: var(--kde-space-4); }
 .field-label { font-weight: var(--ha-font-weight-medium, 500); margin: var(--kde-space-2) 0; }
 .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--kde-space-2); margin-bottom: var(--kde-space-2); }

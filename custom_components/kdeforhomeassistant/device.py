@@ -38,6 +38,15 @@ _LOGGER = logging.getLogger(__name__)
 
 WAKE_ON_LAN_PORT = 9
 
+# Run commands with one of these names take over the built-in ring and screen
+# lock, which do not work on every desktop. The names are the ones the button
+# helper on the panel asks the AI to use, in each language of the panel.
+OWN_COMMAND_NAMES: dict[str, frozenset[str]] = {
+    "ring": frozenset({"ring", "laten rinkelen"}),
+    "lock": frozenset({"lock screen", "scherm vergrendelen"}),
+    "unlock": frozenset({"unlock screen", "scherm ontgrendelen"}),
+}
+
 
 class KdeConnectDevice:
     """A paired device, as seen from Home Assistant."""
@@ -222,12 +231,29 @@ class KdeConnectDevice:
         """Open the run command settings on the device, to add commands."""
         return self._send(PACKET_TYPE_RUNCOMMAND_REQUEST, {"setup": True})
 
+    def own_command(self, role: str) -> str | None:
+        """Return the key of the run command that takes over ring, lock or unlock."""
+        names = OWN_COMMAND_NAMES[role]
+        for key, command in self.remote_commands.items():
+            if command["name"].strip().casefold() in names:
+                return key
+        return None
+
     def ring(self) -> bool:
-        """Make the device play its find-my-device sound."""
+        """Make the device ring, with its own command or the find-my-device sound."""
+        if key := self.own_command("ring"):
+            return self.run_command(key)
         return self._send(PACKET_TYPE_FINDMYPHONE_REQUEST, {})
 
     def set_locked(self, locked: bool) -> bool:
         """Lock or unlock the device's screen."""
+        if key := self.own_command("lock" if locked else "unlock"):
+            # A command does not report back, so assume it worked.
+            if not self.run_command(key):
+                return False
+            self.locked = locked
+            self._notify()
+            return True
         return self._send(PACKET_TYPE_LOCK_REQUEST, {"setLocked": locked})
 
     def send_notification(self, message: str, title: str | None) -> bool:
