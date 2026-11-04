@@ -476,12 +476,12 @@ const TEXT = {
   },
 };
 
-// ?lang=nl in the link wins, then the last choice, then the browser language.
+// English unless ?lang=nl is in the link or Dutch was picked with the NL button.
 const pickLang = (value) => (value === "nl" || value === "en" ? value : null);
 let lang =
   pickLang(new URLSearchParams(location.search).get("lang")) ||
   pickLang(storage.get("kde-demo-lang")) ||
-  ((navigator.language || "en").toLowerCase().startsWith("nl") ? "nl" : "en");
+  "en";
 const t = (key, vars = {}) =>
   (TEXT[lang][key] ?? TEXT.en[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
 
