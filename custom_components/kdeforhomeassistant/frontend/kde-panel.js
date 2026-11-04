@@ -76,6 +76,10 @@ const STRINGS = {
     pair_error_not_connected:
       "{name} is not connected to Home Assistant. Check that KDE Connect is open.",
     pair_error_other: "Pairing did not work. Try again.",
+    pair_resend_in: "A new notification goes to {name} in {seconds} s.",
+    pair_resend_now: "Send now",
+    pair_resend_stop: "Stop",
+    pair_resend: "Send a new notification",
     paired: "{name} is paired.",
     step_commands_title: "Add buttons",
     step_commands_text:
@@ -129,7 +133,7 @@ const STRINGS = {
     entities: "Entities",
     error: "Something went wrong: {error}",
     // Button helper
-    helper_open: "Which buttons can I make?",
+    helper_open: "Help me make buttons",
     helper_title: "Make buttons with AI",
     helper_intro:
       "Choose your Linux distribution and the buttons you want. This page writes a prompt for the AI of your choice, such as ChatGPT, Claude, Gemini or Copilot. The AI answers with a table of commands to add in KDE Connect.",
@@ -250,6 +254,10 @@ const STRINGS = {
     pair_error_not_connected:
       "{name} is niet verbonden met Home Assistant. Controleer of KDE Connect open is.",
     pair_error_other: "Koppelen is niet gelukt. Probeer het opnieuw.",
+    pair_resend_in: "Over {seconds} s gaat er een nieuwe melding naar {name}.",
+    pair_resend_now: "Nu sturen",
+    pair_resend_stop: "Stoppen",
+    pair_resend: "Nieuwe melding sturen",
     paired: "{name} is gekoppeld.",
     step_commands_title: "Knoppen toevoegen",
     step_commands_text:
@@ -301,7 +309,7 @@ const STRINGS = {
     unknown_device: "Dit apparaat is niet meer gekoppeld.",
     entities: "Entiteiten",
     error: "Er ging iets mis: {error}",
-    helper_open: "Welke knoppen kan ik maken?",
+    helper_open: "Help mij knoppen maken",
     helper_title: "Knoppen maken met AI",
     helper_intro:
       "Kies je Linux-distributie en de knoppen die je wilt. Deze pagina maakt er een prompt van voor de AI die je wilt gebruiken, zoals ChatGPT, Claude, Gemini of Copilot. De AI antwoordt met een tabel met opdrachten die je in KDE Connect zet.",
@@ -421,8 +429,9 @@ const PROMPTS = {
       "Answer briefly, without an introduction, and only with these parts:",
       "1. A table with the columns Name | Command | What it does. Name is the short button name for Home Assistant. Put each command in a code span; write a | inside a command as \\|.",
       `2. Only if a command needs a program that is not on ${distro} by default: one line naming the program, saying I have to install it first. No install commands.`,
-      "3. A file kdeconnect-commands.json to import in KDE Connect. It holds a JSON array with one object per row of the table, with exactly the keys \"name\" and \"command\", for example: [{\"name\": \"Shut down\", \"command\": \"systemctl poweroff\"}]. Give it as a file I can download. If you can't make files, say so honestly in one sentence; I'll then copy the commands from the table by hand.",
-      `4. How to import it, in short steps: open KDE Connect on the computer, choose the device "${haName}" (that is Home Assistant), open the settings of the plugin Run commands, click Import, choose the file and click OK. The buttons then show up in Home Assistant.`,
+      `3. How to import the file, in short steps: open KDE Connect on the computer, choose the device "${haName}" (that is Home Assistant), open the settings of the plugin Run commands, click Import, choose the file and click OK. The buttons then show up in Home Assistant.`,
+      "4. Right above the file, this warning, in bold and starting with 🔴: Importing replaces the commands that are already in the list. Want to keep them? Add the new rows by hand instead.",
+      "5. Last, the file kdeconnect-commands.json. It holds a JSON array with one object per row of the table, with exactly the keys \"name\" and \"command\", for example: [{\"name\": \"Shut down\", \"command\": \"systemctl poweroff\"}]. Give it as a file I can download. If you can't make files, say so honestly in one sentence instead; I'll then copy the commands from the table by hand.",
       "Add nothing else: no notes about packages or settings that are fine, no tips.",
     ].join("\n"),
   nl: ({ distro, desktop, buttons, fixed, haName }) =>
@@ -450,8 +459,9 @@ const PROMPTS = {
       "Antwoord kort in het Nederlands, zonder inleiding, en alleen met deze onderdelen:",
       "1. Een tabel met de kolommen Naam | Opdracht | Wat het doet. Naam is de korte knopnaam voor Home Assistant. Zet elke opdracht in een codeblokje; schrijf een | in een opdracht als \\|.",
       `2. Alleen als een opdracht een programma nodig heeft dat niet standaard op ${distro} staat: één regel met de naam van dat programma en dat ik het eerst moet installeren. Geen installatieopdrachten.`,
-      "3. Een bestand kdeconnect-commands.json om te importeren in KDE Connect. Het bevat een JSON-array met één object per rij uit de tabel, met precies de sleutels \"name\" en \"command\", bijvoorbeeld: [{\"name\": \"Afsluiten\", \"command\": \"systemctl poweroff\"}]. Geef het als bestand dat ik kan downloaden. Kun je geen bestanden maken, zeg dat dan eerlijk in één zin; dan kopieer ik de opdrachten zelf uit de tabel.",
-      `4. Hoe ik het importeer, in korte stappen: open KDE Connect op de computer, kies het apparaat "${haName}" (dat is Home Assistant), open de instellingen van de plug-in Opdrachten uitvoeren (Run commands), klik op Importeren, kies het bestand en klik op OK. De knoppen verschijnen dan in Home Assistant.`,
+      `3. Hoe ik het bestand importeer, in korte stappen: open KDE Connect op de computer, kies het apparaat "${haName}" (dat is Home Assistant), open de instellingen van de plug-in Opdrachten uitvoeren (Run commands), klik op Importeren, kies het bestand en klik op OK. De knoppen verschijnen dan in Home Assistant.`,
+      "4. Direct boven het bestand deze waarschuwing, vetgedrukt en beginnend met 🔴: Importeren vervangt de opdrachten die al in de lijst staan. Wil je die houden? Zet de nieuwe rijen er dan met de hand bij.",
+      "5. Als laatste het bestand kdeconnect-commands.json. Het bevat een JSON-array met één object per rij uit de tabel, met precies de sleutels \"name\" en \"command\", bijvoorbeeld: [{\"name\": \"Afsluiten\", \"command\": \"systemctl poweroff\"}]. Geef het als bestand dat ik kan downloaden. Kun je geen bestanden maken, zeg dat dan in plaats daarvan eerlijk in één zin; dan kopieer ik de opdrachten zelf uit de tabel.",
       "Voeg verder niets toe: geen opmerkingen over pakketten of instellingen die in orde zijn, geen tips.",
     ].join("\n"),
 };
@@ -477,6 +487,11 @@ const TYPE_ICONS = {
   tablet: "mdi:tablet",
   tv: "mdi:television",
 };
+
+// When a pairing request expires or is turned down, send a new one after a
+// countdown, a few times in a row.
+const PAIR_RESEND_SECONDS = 10;
+const PAIR_RESEND_MAX = 3;
 
 const isComputer = (type) => ["desktop", "laptop", "unknown"].includes(type);
 
@@ -609,6 +624,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
 
   disconnectedCallback() {
     for (const key of Object.keys(this._unsubs)) this._unsub(key);
+    this._stopResend();
   }
 
   // Helpers
@@ -753,6 +769,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
   _stopWizard() {
     this._unsub("discover");
     this._unsub("pair");
+    this._stopResend();
     this._wiz = null;
   }
 
@@ -808,8 +825,10 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     }
   }
 
-  _startPair(deviceId) {
+  _startPair(deviceId, { auto = false } = {}) {
     const wiz = this._wiz;
+    this._stopResend();
+    wiz.pairResends = auto ? (wiz.pairResends || 0) + 1 : 0;
     const found = this._state.discovered.find((d) => d.device_id === deviceId);
     wiz.deviceName = found?.name || wiz.deviceName || deviceId;
     wiz.deviceType = found?.type || wiz.deviceType;
@@ -818,13 +837,40 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     this._sub("pair", "pair", { device_id: deviceId }, (event) => {
       if (!this._wiz || this._wiz.pair?.deviceId !== deviceId) return;
       if (event.key) wiz.pair.key = event.key;
-      if (event.error) wiz.pair.error = event.error;
+      if (event.error) {
+        wiz.pair.error = event.error;
+        if (["timeout", "rejected"].includes(event.error) && wiz.pairResends < PAIR_RESEND_MAX) {
+          this._startResend();
+        }
+      }
       if (event.paired) this._paired(event.paired);
       this._render();
     }).catch((err) => {
       wiz.pair.error = err.code || "other";
       this._render();
     });
+  }
+
+  // Count down, then send a new pairing request.
+  _startResend() {
+    const pair = this._wiz.pair;
+    pair.countdown = PAIR_RESEND_SECONDS;
+    this._resendTimer = setInterval(() => {
+      const wiz = this._wiz;
+      if (!wiz || wiz.pair !== pair || wiz.step !== "pair") {
+        this._stopResend();
+        return;
+      }
+      pair.countdown -= 1;
+      if (pair.countdown <= 0) this._startPair(pair.deviceId, { auto: true });
+      else this._render();
+    }, 1000);
+  }
+
+  _stopResend() {
+    clearInterval(this._resendTimer);
+    this._resendTimer = null;
+    if (this._wiz?.pair) this._wiz.pair.countdown = null;
   }
 
   _paired(subentryId) {
@@ -1051,6 +1097,13 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       }
       case "wiz-retry":
         this._startPair(this._wiz.pair.deviceId);
+        return;
+      case "wiz-resend-now":
+        this._startPair(this._wiz.pair.deviceId, { auto: true });
+        return;
+      case "wiz-resend-stop":
+        this._stopResend();
+        this._render();
         return;
       case "wiz-accept":
         this._acceptIncoming();
@@ -1730,8 +1783,11 @@ class KdeForHomeAssistantPanel extends HTMLElement {
             rejected: "pair_error_rejected",
             not_connected: "pair_error_not_connected",
           }[pair.error] || "pair_error_other";
-          content = `${this._alert("error", esc(this._t(key, { name })))}
-            <div class="actions-row">${this._button(this._t("try_again"), "wiz-retry", { appearance: "filled", iconName: "mdi:refresh" })}</div>`;
+          content = pair.countdown
+            ? `${this._alert("warning", `${esc(this._t(key, { name }))}<br>${esc(this._t("pair_resend_in", { name, seconds: pair.countdown }))}`)}
+              <div class="actions-row">${this._button(this._t("pair_resend_stop"), "wiz-resend-stop", { appearance: "plain" })}${this._button(this._t("pair_resend_now"), "wiz-resend-now", { appearance: "filled", iconName: "mdi:bell-ring-outline" })}</div>`
+            : `${this._alert("error", esc(this._t(key, { name })))}
+              <div class="actions-row">${this._button(this._t(["timeout", "rejected"].includes(pair.error) ? "pair_resend" : "try_again"), "wiz-retry", { appearance: "filled", iconName: "mdi:refresh" })}</div>`;
         } else if (!pair.key) {
           content = `<div class="waiting"><ha-spinner size="small"></ha-spinner><p>${esc(this._t("pair_sending", { name }))}</p></div>`;
         } else {
