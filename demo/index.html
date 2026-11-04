@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>KDE for Home Assistant Demo</title>
+  <meta name="description" content="Try the KDE for Home Assistant sidebar page with made-up devices, right in your browser.">
+  <link rel="icon" href="favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&family=Roboto+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="demo.css">
+</head>
+<body>
+  <div class="demo-bar" role="region" aria-label="Demo">
+    <span class="demo-badge">Demo</span>
+    <span class="demo-text" data-i18n="demo_text">Made-up devices. Nothing here connects to a real computer or phone.</span>
+    <span class="demo-spacer"></span>
+    <button type="button" class="demo-chip" id="demo-controls-toggle" aria-expanded="false" aria-controls="demo-controls">
+      <ha-icon icon="mdi:flask-outline"></ha-icon><span data-i18n="try_things">Try things</span>
+    </button>
+    <div class="demo-segment" role="group" aria-label="Language">
+      <button type="button" data-lang="en">EN</button><button type="button" data-lang="nl">NL</button>
+    </div>
+    <button type="button" class="demo-icon-button" id="theme-toggle" aria-label="Switch light/dark" title="Switch light/dark">
+      <ha-icon icon="mdi:theme-light-dark"></ha-icon>
+    </button>
+    <a class="demo-chip primary" href="https://github.com/Radeaus/kdeforhomeassistant#install">
+      <ha-icon icon="mdi:download"></ha-icon><span data-i18n="install">Install</span>
+    </a>
+  </div>
+
+  <div class="demo-controls" id="demo-controls" hidden>
+    <div class="demo-controls-title" data-i18n="try_things">Try things</div>
+    <p data-i18n="controls_text">These play the part of your devices, so you can see how the page reacts.</p>
+    <button type="button" data-demo="request"><ha-icon icon="mdi:cellphone-arrow-down"></ha-icon><span><b data-i18n="ctl_request">A phone asks to pair</b><small data-i18n="ctl_request_sub">As if you tapped Pair in KDE Connect</small></span></button>
+    <button type="button" data-demo="toggle"><ha-icon icon="mdi:lan-disconnect"></ha-icon><span><b data-i18n="ctl_toggle">Workstation on/off</b><small data-i18n="ctl_toggle_sub">Connect or disconnect it</small></span></button>
+    <button type="button" data-demo="empty"><ha-icon icon="mdi:restart"></ha-icon><span><b data-i18n="ctl_empty">Start from scratch</b><small data-i18n="ctl_empty_sub">No devices yet, with the setup wizard</small></span></button>
+    <button type="button" data-demo="reset"><ha-icon icon="mdi:backup-restore"></ha-icon><span><b data-i18n="ctl_reset">Reset the demo</b><small data-i18n="ctl_reset_sub">Back to the example devices</small></span></button>
+  </div>
+
+  <div class="app">
+    <div class="scrim" id="scrim" hidden></div>
+    <aside class="sidebar" id="sidebar" aria-label="Sidebar">
+      <div class="sidebar-head">
+        <ha-icon icon="mdi:menu" class="sidebar-menu"></ha-icon>
+        <span class="sidebar-title">Home Assistant</span>
+      </div>
+      <nav class="sidebar-items">
+        <a href="#" data-fake="Overview"><ha-icon icon="mdi:view-dashboard"></ha-icon><span>Overview</span></a>
+        <a href="#" data-fake="Energy"><ha-icon icon="mdi:lightning-bolt"></ha-icon><span>Energy</span></a>
+        <a href="#" data-fake="Map"><ha-icon icon="mdi:tooltip-account"></ha-icon><span>Map</span></a>
+        <a href="#" data-fake="Logbook"><ha-icon icon="mdi:format-list-bulleted-type"></ha-icon><span>Logbook</span></a>
+        <a href="#" data-fake="History"><ha-icon icon="mdi:chart-box"></ha-icon><span>History</span></a>
+        <a href="#" class="active" data-home aria-current="page"><ha-icon icon="mdi:monitor-cellphone"></ha-icon><span>KDE for Home Assistant</span></a>
+        <a href="#" data-fake="Media"><ha-icon icon="mdi:play-box-multiple"></ha-icon><span>Media</span></a>
+        <a href="#" data-fake="To-do lists"><ha-icon icon="mdi:clipboard-list"></ha-icon><span>To-do lists</span></a>
+      </nav>
+      <div class="sidebar-bottom">
+        <a href="#" data-fake="Developer tools"><ha-icon icon="mdi:hammer"></ha-icon><span>Developer tools</span></a>
+        <a href="#" data-fake="Settings"><ha-icon icon="mdi:cog"></ha-icon><span>Settings</span></a>
+        <a href="#" data-fake="Notifications"><ha-icon icon="mdi:bell-outline"></ha-icon><span>Notifications</span></a>
+        <a href="#" data-fake="Profile"><span class="avatar">D</span><span>Demo user</span></a>
+      </div>
+    </aside>
+    <main class="main" id="main"></main>
+  </div>
+
+  <dialog class="more-info" id="more-info" aria-labelledby="more-info-title">
+    <div class="more-info-head">
+      <button type="button" class="demo-icon-button" data-close aria-label="Close"><ha-icon icon="mdi:close"></ha-icon></button>
+      <div class="more-info-titles">
+        <div class="more-info-title" id="more-info-title"></div>
+        <div class="more-info-sub"></div>
+      </div>
+    </div>
+    <div class="more-info-body"></div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript><p class="noscript">The demo needs JavaScript.</p></noscript>
+  <script type="module" src="demo.js"></script>
+</body>
+</html>

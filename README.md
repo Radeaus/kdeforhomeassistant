@@ -4,6 +4,14 @@
 
 A Home Assistant integration that speaks the [KDE Connect](https://kdeconnect.kde.org/) protocol. Home Assistant joins your network as a regular KDE Connect device, so your PCs and phones only need the normal KDE Connect app.
 
+<p align="center">
+  <a href="https://radeaus.github.io/kdeforhomeassistant/"><img src="https://img.shields.io/badge/%E2%96%B6%20Try%20the%20demo-in%20your%20browser-009ac7?style=for-the-badge" alt="Try the demo in your browser" height="36"></a>
+</p>
+
+**[Try the demo](https://radeaus.github.io/kdeforhomeassistant/)** before you install. It is the real sidebar page with made-up devices, so you can click through the setup wizard, pair a device, run commands and lock a screen without Home Assistant or KDE Connect. Nothing in the demo connects to a real device.
+
+[![The KDE for Home Assistant page in the demo](https://raw.githubusercontent.com/Radeaus/kdeforhomeassistant/main/assets/demo.png)](https://radeaus.github.io/kdeforhomeassistant/)
+
 ## Entities
 
 Per paired device:
@@ -34,7 +42,7 @@ You can also select **Pair** in KDE Connect on the device itself. Home Assistant
 
 The sidebar page also lets you manage each device: run its commands, add new commands on the device, share scripts, set the MAC address for Wake-on-LAN, and remove it.
 
-Not sure which commands to use? On a computer's page, select **Which buttons can I make?**. Choose your Linux distribution and the buttons you want (shut down, sleep, volume, ...), and the page writes a prompt to paste into any AI chat. The AI answers with a table of names and commands, and if it can, a file to load with *Import* under *Run commands* in KDE Connect. Import replaces the commands already in the list.
+Not sure which commands to use? On a computer's page, select **Help me make buttons**. Choose your Linux distribution and the buttons you want (shut down, sleep, volume, ...), and the page writes a prompt to paste into any AI chat. The AI answers with a table of names and commands, and if it can, a file to load with *Import* under *Run commands* in KDE Connect. Import replaces the commands already in the list.
 
 The built-in ring and screen lock do not work on every desktop (on Cinnamon, for example, there is no ring sound and the lock state is never reported). A run command named **Lock screen**, **Unlock screen** or **Ring** (or Dutch: *Scherm vergrendelen*, *Scherm ontgrendelen*, *Laten rinkelen*) takes over that button and the screen lock entity. The button helper uses these names.
 

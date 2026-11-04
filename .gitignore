@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 kde_connect_runcommand/
 .ruff_cache/
+_site/
