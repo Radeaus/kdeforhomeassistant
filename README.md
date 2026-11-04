@@ -12,6 +12,21 @@ A Home Assistant integration that speaks the [KDE Connect](https://kdeconnect.kd
 
 [![The KDE for Home Assistant page in the demo](https://raw.githubusercontent.com/Radeaus/kdeforhomeassistant/main/assets/demo.png)](https://radeaus.github.io/kdeforhomeassistant/)
 
+## Getting started
+
+You need KDE Connect 23.08 or newer on each computer or phone, on the same network as Home Assistant (UDP 1716 and TCP 1716–1764 open between them).
+
+1. **Install the integration.** In HACS, open the menu (⋮) > **Custom repositories**, add `https://github.com/Radeaus/kdeforhomeassistant` with type *Integration*, then search for **KDE for Home Assistant** and download it.
+   Without HACS: copy `custom_components/kdeforhomeassistant` into your `custom_components` folder.
+2. **Restart Home Assistant.**
+3. **Add the integration.** Go to **Settings > Devices & services > Add integration** and choose **KDE for Home Assistant**. Home Assistant now shows up on your network as "*your home name* - Home Assistant".
+4. **Add a device.** Open **KDE for Home Assistant** in the sidebar and select **Add device**. The wizard walks you through it: name Home Assistant, open KDE Connect on the device, choose the device, accept the pairing request, then pick buttons, scripts and Wake-on-LAN.
+5. **Repeat step 4** for every other computer or phone.
+
+Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Remove that integration first (both use the same ports). Step 3 then offers to take over its pairings.
+
+You can also select **Pair** in KDE Connect on the device. Home Assistant shows the request in the sidebar and as a notification; accept it within 30 seconds.
+
 ## Entities
 
 Per paired device:
@@ -25,33 +40,12 @@ Per paired device:
 | `button` Wake up | Wake-on-LAN (needs a MAC address) |
 | `button` per run command | Runs the commands configured in KDE Connect on the device |
 
-Home Assistant scripts can also be shared with a device. They then show up under *Run command* in KDE Connect.
+Home Assistant scripts can be shared with a device and then show up under *Run command* in KDE Connect. The sidebar page lets you manage each device later: run and add commands, share scripts, set the MAC address, or remove it.
 
-## Install
+## Tips
 
-**HACS:** add `https://github.com/Radeaus/kdeforhomeassistant` as a custom repository (type *Integration*), install **KDE for Home Assistant**, restart.
-
-**Manual:** copy `custom_components/kdeforhomeassistant` into your `custom_components` folder and restart.
-
-## Setup
-
-1. **Settings > Devices & services > Add integration > KDE for Home Assistant**. Home Assistant shows up on your network as "*your home name* - Home Assistant".
-2. Open **KDE for Home Assistant** in the sidebar. A wizard takes you through it step by step: name, open KDE Connect, choose your device, accept the pairing request, then choose buttons, scripts and Wake-on-LAN.
-
-You can also select **Pair** in KDE Connect on the device itself. Home Assistant then shows the request in the sidebar page and as a notification; accept it within 30 seconds.
-
-The sidebar page also lets you manage each device: run its commands, add new commands on the device, share scripts, set the MAC address for Wake-on-LAN, and remove it.
-
-Not sure which commands to use? On a computer's page, select **Help me make buttons**. Choose your Linux distribution and the buttons you want (shut down, sleep, volume, ...), and the page writes a prompt to paste into any AI chat. The AI answers with a table of names and commands, and if it can, a file to load with *Import* under *Run commands* in KDE Connect. Import replaces the commands already in the list.
-
-The built-in ring and screen lock do not work on every desktop (on Cinnamon, for example, there is no ring sound and the lock state is never reported). A run command named **Lock screen**, **Unlock screen** or **Ring** (or Dutch: *Scherm vergrendelen*, *Scherm ontgrendelen*, *Laten rinkelen*) takes over that button and the screen lock entity. The button helper uses these names.
-
-Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Setup can take over its pairings. Remove that integration first, since both need the same ports.
-
-## Requirements
-
-- KDE Connect 23.08+ (protocol 7 or 8)
-- UDP 1716 and TCP 1716–1764 reachable between Home Assistant and the device
+- **Not sure which commands to use?** On a computer's page, select **Help me make buttons**. Pick your Linux distribution and the buttons you want; the page writes a prompt for any AI chat. The answer can include a file to load with *Import* under *Run commands* in KDE Connect (this replaces the commands already there).
+- **Ring or screen lock not working?** They don't on every desktop (Cinnamon, for example). A run command named **Lock screen**, **Unlock screen** or **Ring** (or Dutch: *Scherm vergrendelen*, *Scherm ontgrendelen*, *Laten rinkelen*) takes over that button and the lock entity.
 
 ## Example
 
