@@ -97,6 +97,8 @@ const STRINGS = {
     step_scripts_title: "Share scripts",
     step_scripts_text:
       "Choose the Home Assistant scripts {name} may run. They show up under Run command in KDE Connect.",
+    step_scripts_intro:
+      "A shared script lets you start something in Home Assistant from {name}, such as turning off the lights. Choose the scripts below; they show up under Run command in KDE Connect. Don't need it? Select Skip.",
     no_scripts: "No scripts yet",
     no_scripts_text: "Create a script in Home Assistant, then come back to share it.",
     create_script: "Create script",
@@ -269,6 +271,8 @@ const STRINGS = {
     step_scripts_title: "Scripts delen",
     step_scripts_text:
       "Kies welke Home Assistant-scripts {name} mag uitvoeren. Ze verschijnen onder Opdracht uitvoeren in KDE Connect.",
+    step_scripts_intro:
+      "Met een gedeeld script start je vanaf {name} iets in Home Assistant, zoals de lampen uitdoen. Kies hieronder de scripts; ze staan dan onder Opdracht uitvoeren in KDE Connect. Niet nodig? Klik op Overslaan.",
     no_scripts: "Nog geen scripts",
     no_scripts_text: "Maak een script in Home Assistant en kom dan terug om het te delen.",
     create_script: "Script maken",
@@ -392,7 +396,7 @@ const HELPER_BUTTONS = [
 const HELPER_STORAGE = "kdeforhomeassistant-helper";
 
 const PROMPTS = {
-  en: ({ distro, desktop, buttons, fixed }) =>
+  en: ({ distro, desktop, buttons, fixed, haName }) =>
     [
       "I want to control my Linux computer from Home Assistant with KDE Connect. In KDE Connect I can add my own commands under \"Run commands\". Every command becomes a button in Home Assistant.",
       "",
@@ -410,17 +414,18 @@ const PROMPTS = {
       ...(fixed.length
         ? [`- Use exactly these names: ${fixed.join(", ")}. Home Assistant recognises these buttons by their name.`]
         : []),
-      `- Prefer programs that come with ${distro}. If something has to be installed, say so.`,
+      `- Prefer programs that come with ${distro}.`,
+      "- To open a program: you don't know whether I installed it as a normal package, a Flatpak or a Snap. Make the command try all three, in the background, for example: `if command -v spotify >/dev/null 2>&1; then spotify; elif flatpak info com.spotify.Client >/dev/null 2>&1; then flatpak run com.spotify.Client; else snap run spotify; fi >/dev/null 2>&1 &`",
       "- If it matters, make the command work on both X11 and Wayland.",
       "",
-      "Answer briefly, without an introduction:",
+      "Answer briefly, without an introduction, and only with these parts:",
       "1. A table with the columns Name | Command | What it does. Name is the short button name for Home Assistant. Put each command in a code span; write a | inside a command as \\|.",
-      "2. Only if something has to be installed: one install command for the terminal.",
-      "3. Only if a command needs a setting changed first: one short line about it.",
-      "",
-      "Then make a file kdeconnect-commands.json that I can import in KDE Connect (Run commands > Import). The file holds a JSON array with one object per row of the table, with exactly the keys \"name\" and \"command\", for example: [{\"name\": \"Shut down\", \"command\": \"systemctl poweroff\"}]. Give it as a file I can download. If you can't make files, say so honestly in one sentence; I'll then copy the commands from the table by hand.",
+      `2. Only if a command needs a program that is not on ${distro} by default: one line naming the program, saying I have to install it first. No install commands.`,
+      "3. A file kdeconnect-commands.json to import in KDE Connect. It holds a JSON array with one object per row of the table, with exactly the keys \"name\" and \"command\", for example: [{\"name\": \"Shut down\", \"command\": \"systemctl poweroff\"}]. Give it as a file I can download. If you can't make files, say so honestly in one sentence; I'll then copy the commands from the table by hand.",
+      `4. How to import it, in short steps: open KDE Connect on the computer, choose the device "${haName}" (that is Home Assistant), open the settings of the plugin Run commands, click Import, choose the file and click OK. The buttons then show up in Home Assistant.`,
+      "Add nothing else: no notes about packages or settings that are fine, no tips.",
     ].join("\n"),
-  nl: ({ distro, desktop, buttons, fixed }) =>
+  nl: ({ distro, desktop, buttons, fixed, haName }) =>
     [
       "Ik wil mijn Linux-computer bedienen vanuit Home Assistant met KDE Connect. In KDE Connect kan ik onder \"Opdrachten uitvoeren\" (Run commands) zelf opdrachten toevoegen. Elke opdracht wordt een knop in Home Assistant.",
       "",
@@ -438,15 +443,16 @@ const PROMPTS = {
       ...(fixed.length
         ? [`- Gebruik precies deze namen: ${fixed.join(", ")}. Home Assistant herkent deze knoppen aan hun naam.`]
         : []),
-      `- Gebruik bij voorkeur programma's die standaard op ${distro} staan. Moet er iets geïnstalleerd worden, zeg dat dan.`,
+      `- Gebruik bij voorkeur programma's die standaard op ${distro} staan.`,
+      "- Een programma openen: je weet niet of ik het als gewoon pakket, als Flatpak of als Snap heb geïnstalleerd. Laat de opdracht alle drie proberen, op de achtergrond, bijvoorbeeld: `if command -v spotify >/dev/null 2>&1; then spotify; elif flatpak info com.spotify.Client >/dev/null 2>&1; then flatpak run com.spotify.Client; else snap run spotify; fi >/dev/null 2>&1 &`",
       "- Als het uitmaakt: zorg dat de opdracht werkt op zowel X11 als Wayland.",
       "",
-      "Antwoord kort in het Nederlands, zonder inleiding:",
+      "Antwoord kort in het Nederlands, zonder inleiding, en alleen met deze onderdelen:",
       "1. Een tabel met de kolommen Naam | Opdracht | Wat het doet. Naam is de korte knopnaam voor Home Assistant. Zet elke opdracht in een codeblokje; schrijf een | in een opdracht als \\|.",
-      "2. Alleen als er iets geïnstalleerd moet worden: één installatieopdracht voor de terminal.",
-      "3. Alleen als er eerst een instelling aangepast moet worden: één korte regel daarover.",
-      "",
-      "Maak daarna een bestand kdeconnect-commands.json dat ik in KDE Connect kan importeren (Opdrachten uitvoeren > Importeren). Het bestand bevat een JSON-array met één object per rij uit de tabel, met precies de sleutels \"name\" en \"command\", bijvoorbeeld: [{\"name\": \"Afsluiten\", \"command\": \"systemctl poweroff\"}]. Geef het als bestand dat ik kan downloaden. Kun je geen bestanden maken, zeg dat dan eerlijk in één zin; dan kopieer ik de opdrachten zelf uit de tabel.",
+      `2. Alleen als een opdracht een programma nodig heeft dat niet standaard op ${distro} staat: één regel met de naam van dat programma en dat ik het eerst moet installeren. Geen installatieopdrachten.`,
+      "3. Een bestand kdeconnect-commands.json om te importeren in KDE Connect. Het bevat een JSON-array met één object per rij uit de tabel, met precies de sleutels \"name\" en \"command\", bijvoorbeeld: [{\"name\": \"Afsluiten\", \"command\": \"systemctl poweroff\"}]. Geef het als bestand dat ik kan downloaden. Kun je geen bestanden maken, zeg dat dan eerlijk in één zin; dan kopieer ik de opdrachten zelf uit de tabel.",
+      `4. Hoe ik het importeer, in korte stappen: open KDE Connect op de computer, kies het apparaat "${haName}" (dat is Home Assistant), open de instellingen van de plug-in Opdrachten uitvoeren (Run commands), klik op Importeren, kies het bestand en klik op OK. De knoppen verschijnen dan in Home Assistant.`,
+      "Voeg verder niets toe: geen opmerkingen over pakketten of instellingen die in orde zijn, geen tips.",
     ].join("\n"),
 };
 
@@ -1186,6 +1192,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       desktop: this._helper.desktop,
       buttons: this._helperButtons(),
       fixed: this._helper.buttons.filter((key) => OWN_BUTTONS.includes(key)).map((key) => `"${this._t(`btn_${key}`)}"`),
+      haName: this._state?.name || "Home Assistant",
     });
   }
 
@@ -1765,8 +1772,9 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       }
       case "scripts": {
         title = this._t("step_scripts_title");
+        skip = true;
         const scripts = this._scripts();
-        content = `<p>${esc(this._t("step_scripts_text", { name }))}</p>${
+        content = `<p>${esc(this._t("step_scripts_intro", { name }))}</p>${
           scripts.length
             ? `<div class="list bordered">${scripts
                 .map((s) =>
