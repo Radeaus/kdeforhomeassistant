@@ -141,9 +141,11 @@ const STRINGS = {
     screen_alt: "Screen of {name}",
     screen_refresh: "Refresh",
     screen_empty: "No screenshot yet. Select Refresh.",
-    screen_setup: "To see the screen, add a command named “Screenshot” on {name} with the line for its desktop:",
-    screen_gnome: "Linux: GNOME, Cinnamon, Xfce, MATE",
-    screen_plasma: "Linux: KDE Plasma",
+    screen_desktop: "To see the screen, {name} needs a run command named “Screenshot”. Which desktop does {name} use?",
+    screen_desktop_hint: "The same choice as in Help me make buttons.",
+    screen_other: "Something else",
+    screen_command: "Add this command on {name} and name it “Screenshot”:",
+    screen_unsupported: "Showing the screen isn't possible on {desktop} yet: it has no screenshot tool that works without installing extra software.",
     screen_timeout: "No screenshot arrived. Check the Screenshot command on {name}.",
     buttons: "Buttons",
     buttons_text: "Commands set up in KDE Connect on {name}.",
@@ -343,9 +345,11 @@ const STRINGS = {
     screen_alt: "Scherm van {name}",
     screen_refresh: "Vernieuwen",
     screen_empty: "Nog geen schermafbeelding. Kies Vernieuwen.",
-    screen_setup: "Om het scherm te zien, voeg je op {name} een opdracht toe met de naam “Schermafbeelding” en de regel voor het bureaublad:",
-    screen_gnome: "Linux: GNOME, Cinnamon, Xfce, MATE",
-    screen_plasma: "Linux: KDE Plasma",
+    screen_desktop: "Om het scherm te zien, heeft {name} een opdracht nodig met de naam “Schermafbeelding”. Welk bureaublad gebruikt {name}?",
+    screen_desktop_hint: "Dezelfde keuze als bij Help mij knoppen maken.",
+    screen_other: "Iets anders",
+    screen_command: "Voeg deze opdracht toe op {name} en noem hem “Schermafbeelding”:",
+    screen_unsupported: "Het scherm tonen kan nog niet op {desktop}: daar is geen programma voor schermafbeeldingen dat werkt zonder extra software te installeren.",
     screen_timeout: "Er kwam geen schermafbeelding binnen. Controleer de opdracht Schermafbeelding op {name}.",
     buttons: "Knoppen",
     buttons_text: "Opdrachten die in KDE Connect op {name} zijn ingesteld.",
@@ -452,6 +456,13 @@ const HELPER_BUTTONS = [
   "browser",
 ];
 const HELPER_STORAGE = "kdeforhomeassistant-helper";
+
+// Screenshot tools that come with the desktop, so nothing has to be installed.
+// Other desktops are not offered until a tool like this is known to work there.
+const SCREENSHOT_TOOLS = {
+  "KDE Plasma": (file) => `spectacle -b -n -f -o ${file}`,
+  Cinnamon: (file) => `gnome-screenshot -f ${file}`,
+};
 
 const PROMPTS = {
   en: ({ distro, desktop, buttons, fixed, haName }) =>
@@ -1222,6 +1233,10 @@ class KdeForHomeAssistantPanel extends HTMLElement {
           this._hass.callService("lock", action, { entity_id: data.entity })
         );
         return;
+      case "screen-desktop":
+        this._helper.desktop = data.value || null;
+        this._helperChanged(null);
+        return;
       case "screen-refresh": {
         const d = this._device(data.id);
         const before = this._hass.states[d?.entities?.screen]?.state;
@@ -1488,13 +1503,25 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       ? `<img class="screen" src="${esc(picture.startsWith("/") ? picture + (picture.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(st.state) : picture)}" alt="${esc(this._t("screen_alt", { name: d.name }))}">`
       : `<div class="screen-empty">${icon("mdi:monitor-screenshot")}<span>${esc(this._t("screen_empty"))}</span></div>`;
     if (!d.can_screenshot) {
-      const file = "/tmp/home-assistant-screen.png";
-      const share = `kdeconnect-cli -d ${this._state.self_id} --share ${file}`;
-      const line = (label, cmd) => `<div class="screen-cmd"><div class="screen-cmd-label">${esc(label)}</div><code>${esc(cmd)}</code></div>`;
+      const desktop = this._helper.desktop;
+      const choices = DESKTOPS.map((name) => this._choice("screen-desktop", name, name, desktop === name))
+        .concat(this._choice("screen-desktop", "other", this._t("screen_other"), desktop === "other"))
+        .join("");
+      const tool = SCREENSHOT_TOOLS[desktop];
+      let next = "";
+      if (tool) {
+        const file = "/tmp/home-assistant-screen.png";
+        const line = `${tool(file)} && kdeconnect-cli -d ${this._state.self_id} --share ${file}`;
+        next = `<p class="card-text">${esc(this._t("screen_command", { name: d.name }))}</p>
+          <div class="card-content"><code class="screen-cmd">${esc(line)}</code></div>
+          <div class="card-actions">${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:cog-outline", data: { id: d.id, name: d.name }, busy: this._busy.has("setup" + d.id) })}</div>`;
+      } else if (desktop) {
+        next = `<div class="card-content">${this._alert("info", esc(this._t("screen_unsupported", { desktop: desktop === "other" ? this._t("screen_other").toLowerCase() : desktop })))}</div>`;
+      }
       return `<ha-card header="${esc(this._t("screen"))}">
-        <p class="card-text">${esc(this._t("screen_setup", { name: d.name }))}</p>
-        <div class="card-content">${line(this._t("screen_gnome"), `gnome-screenshot -f ${file} && ${share}`)}${line(this._t("screen_plasma"), `spectacle -b -n -f -o ${file} && ${share}`)}</div>
-        <div class="card-actions">${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:cog-outline", data: { id: d.id, name: d.name }, busy: this._busy.has("setup" + d.id) })}</div>
+        <p class="card-text">${esc(this._t("screen_desktop", { name: d.name }))}</p>
+        <div class="card-content"><div class="choices" role="radiogroup">${choices}</div><p class="hint">${esc(this._t("screen_desktop_hint"))}</p></div>
+        ${next}
       </ha-card>`;
     }
     return `<ha-card header="${esc(this._t("screen"))}">
@@ -1509,7 +1536,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       `<ha-icon-button class="pad-button ${cls}" data-action="remote-send" data-entity="${esc(entity)}" data-command="${command}" label="${esc(this._t("remote_" + command))}">${icon(iconName)}</ha-icon-button>`;
     const extra = (command, iconName) =>
       this._button(this._t("remote_" + command), "remote-send", { appearance: "plain", iconName, data: { entity, command } });
-    return `${this._screenCard(d)}<ha-card header="${esc(this._t("remote"))}">
+    return `<ha-card header="${esc(this._t("remote"))}">
       <div class="remote-pad">
         ${pad("home", "mdi:home-outline")}${pad("up", "mdi:chevron-up")}${pad("back", "mdi:arrow-u-left-top")}
         ${pad("left", "mdi:chevron-left")}${pad("select", "mdi:circle-outline", "ok")}${pad("right", "mdi:chevron-right")}
@@ -1517,9 +1544,9 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       </div>
       <div class="touchpad" data-id="${esc(d.id)}">${icon("mdi:gesture-tap")}<span>${esc(this._t("remote_touchpad"))}</span></div>
       <div class="remote-extra">${extra("click", "mdi:cursor-default-click-outline")}${extra("right_click", "mdi:mouse")}${extra("close", "mdi:window-close")}</div>
-      <div class="card-content">${this._textField({ id: "remote-text", field: "edit.remoteText", enter: "remote-type", data: { entity }, label: this._t("remote_text"), value: this._edit.remoteText ?? "", hint: this._t("remote_text_help", { name: d.name }) })}</div>
-      <div class="card-actions">${this._button(this._t("remote_type"), "remote-type", { iconName: "mdi:keyboard-outline", data: { entity } })}</div>
-    </ha-card>`;
+      <div class="card-content type-row">${this._textField({ id: "remote-text", field: "edit.remoteText", enter: "remote-type", data: { entity }, label: this._t("remote_text"), value: this._edit.remoteText ?? "" })}${this._button(this._t("remote_type"), "remote-type", { iconName: "mdi:keyboard-outline", data: { entity } })}</div>
+      <p class="hint type-hint">${esc(this._t("remote_text_help", { name: d.name }))}</p>
+    </ha-card>${this._screenCard(d)}`;
   }
 
   async _run(key, fn) {
@@ -2149,9 +2176,11 @@ ha-card { display: block; overflow: hidden; }
 .remote-pad .pad-button.ok { background: var(--primary-color); color: var(--text-primary-color, #fff); }
 .screen { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--divider-color); background: #000; }
 .screen-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--kde-space-2); aspect-ratio: 16 / 9; border-radius: 8px; background: var(--secondary-background-color); color: var(--secondary-text-color); text-align: center; padding: var(--kde-space-4); box-sizing: border-box; }
-.screen-cmd { margin-bottom: var(--kde-space-3); }
-.screen-cmd-label { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); margin-bottom: 4px; }
-.screen-cmd code { display: block; padding: var(--kde-space-2) var(--kde-space-3); border-radius: 8px; background: var(--secondary-background-color); font-family: var(--ha-font-family-code, monospace); font-size: 13px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+.type-row { display: flex; align-items: flex-end; gap: var(--kde-space-2); padding-bottom: 0; }
+.type-row > .text-field { flex: 1; min-width: 0; }
+.type-row > ha-button { flex: none; margin-bottom: 8px; }
+.type-hint { margin: 4px var(--kde-space-4) var(--kde-space-4); }
+code.screen-cmd { display: block; padding: var(--kde-space-2) var(--kde-space-3); border-radius: 8px; background: var(--secondary-background-color); font-family: var(--ha-font-family-code, monospace); font-size: 13px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
 .touchpad { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--kde-space-2); height: 200px; margin: 0 var(--kde-space-4) var(--kde-space-3); padding: var(--kde-space-4); box-sizing: border-box; border-radius: 16px; border: 1px dashed var(--divider-color); background: var(--secondary-background-color); color: var(--secondary-text-color); text-align: center; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
 .touchpad ha-icon, .touchpad svg { pointer-events: none; }
 .remote-extra { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--kde-space-2); padding: 0 var(--kde-space-4); }

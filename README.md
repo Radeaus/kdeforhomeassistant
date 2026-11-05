@@ -113,9 +113,11 @@ cards:
 
 Home Assistant can show what is on a computer's screen, as a screenshot you refresh (not live video). The computer takes the screenshot with a run command and sends it through KDE Connect:
 
-1. On the computer, open KDE Connect > *Run command* and add a command named **Screenshot** (or *Schermafbeelding*). The sidebar page shows the exact line to use, with Home Assistant's id filled in, for example:
-   - GNOME, Cinnamon, Xfce, MATE: `gnome-screenshot -f /tmp/home-assistant-screen.png && kdeconnect-cli -d <id> --share /tmp/home-assistant-screen.png`
+1. On the sidebar page, open the device's **Remote** and pick its desktop under **Screen**. The page then shows the run command to add, with Home Assistant's id filled in. It only uses the screenshot tool that comes with the desktop, so nothing has to be installed:
    - KDE Plasma: `spectacle -b -n -f -o /tmp/home-assistant-screen.png && kdeconnect-cli -d <id> --share /tmp/home-assistant-screen.png`
+   - Cinnamon (Linux Mint): `gnome-screenshot -f /tmp/home-assistant-screen.png && kdeconnect-cli -d <id> --share /tmp/home-assistant-screen.png`
+
+   GNOME, Xfce, MATE, Windows and macOS are not supported yet. On the computer, open KDE Connect > *Run command* and add the line as a command named **Screenshot** (or *Schermafbeelding*).
 2. Open the device's **Remote** on the sidebar page and select **Refresh**, or press the *Screenshot* button entity. The picture shows up on the page and in the `image` entity.
 
 Only pictures (PNG, JPEG, WebP, up to 25 MB) are kept, and only the latest one, in memory.
