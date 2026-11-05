@@ -36,6 +36,7 @@ Per paired device:
 | `binary_sensor` Connected | Device is connected |
 | `lock` Screen | Lock/unlock the screen, shows lock state |
 | `notify` | Send a notification |
+| `media_player` Media | What plays on the device (Spotify, a browser, …): play/pause, next/previous, seek, choose the player, and set or mute the system volume |
 | `button` Ring | Find-my-device sound |
 | `button` Wake up | Wake-on-LAN (needs a MAC address) |
 | `button` per run command | Runs the commands configured in KDE Connect on the device |

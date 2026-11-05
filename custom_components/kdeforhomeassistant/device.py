@@ -14,6 +14,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_CAPABILITIES,
@@ -28,15 +29,40 @@ from .kdeconnect.protocol import (
     PACKET_TYPE_FINDMYPHONE_REQUEST,
     PACKET_TYPE_LOCK,
     PACKET_TYPE_LOCK_REQUEST,
+    PACKET_TYPE_MPRIS,
+    PACKET_TYPE_MPRIS_REQUEST,
     PACKET_TYPE_NOTIFICATION,
     PACKET_TYPE_RUNCOMMAND,
     PACKET_TYPE_RUNCOMMAND_REQUEST,
+    PACKET_TYPE_SYSTEMVOLUME,
+    PACKET_TYPE_SYSTEMVOLUME_REQUEST,
     pem_to_der,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 WAKE_ON_LAN_PORT = 9
+
+# PulseAudio and PipeWire report 100% as this value; their maxVolume is higher
+# when volumes above 100% are allowed.
+NORMAL_SINK_VOLUME = 65536
+
+# The fields of a "kdeconnect.mpris" packet we keep per player.
+PLAYER_FIELDS = (
+    "title",
+    "artist",
+    "album",
+    "albumArtUrl",
+    "isPlaying",
+    "pos",
+    "length",
+    "volume",
+    "canPlay",
+    "canPause",
+    "canGoNext",
+    "canGoPrevious",
+    "canSeek",
+)
 
 # Run commands with one of these names take over the built-in ring and screen
 # lock, which do not work on every desktop. The names are the ones the button
@@ -76,6 +102,9 @@ class KdeConnectDevice:
         )
         self.remote_commands: dict[str, dict[str, str]] = {}
         self.locked: bool | None = None
+        self.players: dict[str, dict[str, Any]] = {}
+        self.selected_player: str | None = None
+        self.sinks: dict[str, dict[str, Any]] = {}
         self._listeners: list[Callable[[], None]] = []
         self._command_listeners: list[Callable[[], None]] = []
 
@@ -149,8 +178,14 @@ class KdeConnectDevice:
             self.send_command_list()
             self._send(PACKET_TYPE_RUNCOMMAND_REQUEST, {"requestCommandList": True})
             self._send(PACKET_TYPE_LOCK_REQUEST, {"requestLocked": True})
+            if self.supports(PACKET_TYPE_MPRIS_REQUEST):
+                self._send(PACKET_TYPE_MPRIS_REQUEST, {"requestPlayerList": True})
+            if self.supports(PACKET_TYPE_SYSTEMVOLUME_REQUEST):
+                self._send(PACKET_TYPE_SYSTEMVOLUME_REQUEST, {"requestSinks": True})
         else:
             self.locked = None
+            self.players = {}
+            self.sinks = {}
         self._notify()
 
     @callback
@@ -169,6 +204,52 @@ class KdeConnectDevice:
                 self._notify()
             elif body.get("lockResult") is not None:
                 self._send(PACKET_TYPE_LOCK_REQUEST, {"requestLocked": True})
+        elif packet.type == PACKET_TYPE_MPRIS:
+            self._handle_mpris(body)
+        elif packet.type == PACKET_TYPE_SYSTEMVOLUME:
+            self._handle_systemvolume(body)
+
+    def _handle_mpris(self, body: dict[str, Any]) -> None:
+        if isinstance(names := body.get("playerList"), list):
+            names = [name for name in names if isinstance(name, str)]
+            self.players = {name: self.players.get(name, {}) for name in names}
+            for name in names:
+                self._send(
+                    PACKET_TYPE_MPRIS_REQUEST,
+                    {"player": name, "requestNowPlaying": True, "requestVolume": True},
+                )
+        elif isinstance(name := body.get("player"), str) and name in self.players:
+            player = self.players[name]
+            player.update(
+                {key: body[key] for key in PLAYER_FIELDS if key in body}
+            )
+            if "pos" in body:
+                player["posUpdatedAt"] = dt_util.utcnow()
+        else:
+            return
+        self._notify()
+
+    def _handle_systemvolume(self, body: dict[str, Any]) -> None:
+        if isinstance(sink_list := body.get("sinkList"), list):
+            self.sinks = {
+                sink["name"]: dict(sink)
+                for sink in sink_list
+                if isinstance(sink, dict) and isinstance(sink.get("name"), str)
+            }
+        elif isinstance(name := body.get("name"), str) and name in self.sinks:
+            if body.get("enabled") is True:
+                for sink in self.sinks.values():
+                    sink["enabled"] = False
+            self.sinks[name].update(
+                {
+                    key: body[key]
+                    for key in ("volume", "muted", "enabled", "maxVolume")
+                    if key in body
+                }
+            )
+        else:
+            return
+        self._notify()
 
     def _handle_command_list(self, raw: Any) -> None:
         try:
@@ -256,6 +337,89 @@ class KdeConnectDevice:
             return True
         return self._send(PACKET_TYPE_LOCK_REQUEST, {"setLocked": locked})
 
+    # Media
+
+    @property
+    def active_player(self) -> str | None:
+        """Return the player that media controls act on."""
+        if self.selected_player in self.players:
+            return self.selected_player
+        for name, player in self.players.items():
+            if player.get("isPlaying"):
+                return name
+        return next(iter(self.players), None)
+
+    @property
+    def default_sink(self) -> dict[str, Any] | None:
+        """Return the audio output the device uses, if it reports one."""
+        for sink in self.sinks.values():
+            if sink.get("enabled"):
+                return sink
+        return next(iter(self.sinks.values()), None)
+
+    @property
+    def volume_level(self) -> float | None:
+        """Return the volume from 0 to 1."""
+        if (sink := self.default_sink) is not None:
+            volume = sink.get("volume")
+            if isinstance(volume, int | float):
+                return max(0.0, min(1.0, volume / _normal_volume(sink)))
+            return None
+        if (name := self.active_player) is not None:
+            volume = self.players[name].get("volume")
+            if isinstance(volume, int | float):
+                return max(0.0, min(1.0, volume / 100))
+        return None
+
+    @property
+    def muted(self) -> bool | None:
+        """Return whether the audio output is muted."""
+        if (sink := self.default_sink) is not None:
+            muted = sink.get("muted")
+            return muted if isinstance(muted, bool) else None
+        return None
+
+    def select_player(self, name: str) -> None:
+        """Make media controls act on this player."""
+        self.selected_player = name
+        self._notify()
+
+    def media_action(self, action: str) -> bool:
+        """Send Play, Pause, PlayPause, Stop, Next or Previous to the player."""
+        if (name := self.active_player) is None:
+            return False
+        return self._send(PACKET_TYPE_MPRIS_REQUEST, {"player": name, "action": action})
+
+    def media_seek(self, position_ms: int) -> bool:
+        """Jump to a position in the current track."""
+        if (name := self.active_player) is None:
+            return False
+        return self._send(
+            PACKET_TYPE_MPRIS_REQUEST, {"player": name, "SetPosition": position_ms}
+        )
+
+    def set_volume(self, level: float) -> bool:
+        """Set the volume of the audio output, or else of the player."""
+        if (sink := self.default_sink) is not None:
+            return self._send(
+                PACKET_TYPE_SYSTEMVOLUME_REQUEST,
+                {"name": sink["name"], "volume": round(level * _normal_volume(sink))},
+            )
+        if (name := self.active_player) is not None:
+            return self._send(
+                PACKET_TYPE_MPRIS_REQUEST,
+                {"player": name, "setVolume": round(level * 100)},
+            )
+        return False
+
+    def set_muted(self, muted: bool) -> bool:
+        """Mute or unmute the audio output."""
+        if (sink := self.default_sink) is None:
+            return False
+        return self._send(
+            PACKET_TYPE_SYSTEMVOLUME_REQUEST, {"name": sink["name"], "muted": muted}
+        )
+
     def send_notification(self, message: str, title: str | None) -> bool:
         """Show a notification on the device."""
         title = title or "Home Assistant"
@@ -284,6 +448,14 @@ class KdeConnectDevice:
         if (info := self.hub.discovered.get(self.device_id)) and info.host:
             addresses.add(info.host)
         await self.hass.async_add_executor_job(_send_magic_packet, packet, addresses)
+
+
+def _normal_volume(sink: dict[str, Any]) -> int:
+    """Return the sink volume that means 100%."""
+    maximum = sink.get("maxVolume")
+    if not isinstance(maximum, int) or maximum <= 0:
+        return NORMAL_SINK_VOLUME
+    return min(maximum, NORMAL_SINK_VOLUME)
 
 
 def _send_magic_packet(packet: bytes, addresses: set[str]) -> None:

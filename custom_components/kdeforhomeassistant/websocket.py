@@ -43,7 +43,7 @@ DISCOVERY_INTERVAL = timedelta(seconds=3)
 UPDATE_DELAY = 0.2
 COMMAND_PREFIX = "command_"
 MAC_RE = r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$"
-ENTITY_KEYS = ("connected", "screen_lock", "notify", "ring", "wake")
+ENTITY_KEYS = ("connected", "screen_lock", "media_player", "notify", "ring", "wake")
 
 
 @callback

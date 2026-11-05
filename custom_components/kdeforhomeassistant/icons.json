@@ -18,6 +18,11 @@
           "unlocked": "mdi:monitor"
         }
       }
+    },
+    "media_player": {
+      "media": {
+        "default": "mdi:play-box-outline"
+      }
     }
   }
 }

@@ -31,6 +31,10 @@ PACKET_TYPE_NOTIFICATION = "kdeconnect.notification"
 PACKET_TYPE_FINDMYPHONE_REQUEST = "kdeconnect.findmyphone.request"
 PACKET_TYPE_LOCK = "kdeconnect.lock"
 PACKET_TYPE_LOCK_REQUEST = "kdeconnect.lock.request"
+PACKET_TYPE_MPRIS = "kdeconnect.mpris"
+PACKET_TYPE_MPRIS_REQUEST = "kdeconnect.mpris.request"
+PACKET_TYPE_SYSTEMVOLUME = "kdeconnect.systemvolume"
+PACKET_TYPE_SYSTEMVOLUME_REQUEST = "kdeconnect.systemvolume.request"
 
 DEVICE_TYPES = ("desktop", "laptop", "phone", "tablet", "tv")
 

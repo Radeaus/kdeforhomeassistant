@@ -58,6 +58,7 @@ PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.LOCK,
+    Platform.MEDIA_PLAYER,
     Platform.NOTIFY,
 ]
 

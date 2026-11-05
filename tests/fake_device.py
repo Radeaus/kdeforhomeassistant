@@ -28,6 +28,10 @@ CAPABILITIES = [
     "kdeconnect.notification",
     "kdeconnect.findmyphone.request",
     "kdeconnect.ping",
+    "kdeconnect.mpris",
+    "kdeconnect.mpris.request",
+    "kdeconnect.systemvolume",
+    "kdeconnect.systemvolume.request",
 ]
 
 
@@ -60,6 +64,10 @@ class FakeDevice:
         self.auto_accept = True
         self.commands: dict[str, dict[str, str]] = {}
         self.locked = False
+        # Media players by name, like the MPRIS plugin of KDE Connect sends them.
+        self.players: dict[str, dict] = {}
+        # Audio outputs, like the system volume plugin sends them.
+        self.sinks: list[dict] = []
         self._event = asyncio.Event()
 
     def _identity_packet(self) -> Packet:
@@ -116,9 +124,50 @@ class FakeDevice:
             if "setLocked" in body:
                 self.locked = bool(body["setLocked"])
             self.send(Packet(PACKET_TYPE_LOCK, {"isLocked": self.locked}))
+        elif packet.type == "kdeconnect.mpris.request":
+            self._mpris(body)
+        elif packet.type == "kdeconnect.systemvolume.request":
+            self._systemvolume(body)
         elif packet.type == PACKET_TYPE_IDENTITY:
             pass
         self._event.set()
+
+    def _mpris(self, body: dict) -> None:
+        if body.get("requestPlayerList"):
+            self.send(
+                Packet("kdeconnect.mpris", {"playerList": list(self.players)})
+            )
+            return
+        name = body.get("player")
+        if name not in self.players:
+            return
+        player = self.players[name]
+        action = body.get("action")
+        if action in ("Play", "Pause", "PlayPause", "Stop"):
+            player["isPlaying"] = action == "Play" or (
+                action == "PlayPause" and not player.get("isPlaying")
+            )
+        if "setVolume" in body:
+            player["volume"] = body["setVolume"]
+        if "SetPosition" in body:
+            player["pos"] = body["SetPosition"]
+        self.send(Packet("kdeconnect.mpris", {"player": name, **player}))
+
+    def _systemvolume(self, body: dict) -> None:
+        if body.get("requestSinks"):
+            self.send(Packet("kdeconnect.systemvolume", {"sinkList": self.sinks}))
+            return
+        for sink in self.sinks:
+            if sink["name"] == body.get("name"):
+                for key in ("volume", "muted"):
+                    if key in body:
+                        sink[key] = body[key]
+                        self.send(
+                            Packet(
+                                "kdeconnect.systemvolume",
+                                {"name": sink["name"], key: body[key]},
+                            )
+                        )
 
     def send_commands(self) -> None:
         """Send the configured run commands."""

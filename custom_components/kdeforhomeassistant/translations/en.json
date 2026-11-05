@@ -128,6 +128,11 @@
       "screen": {
         "name": "Screen"
       }
+    },
+    "media_player": {
+      "media": {
+        "name": "Media"
+      }
     }
   },
   "exceptions": {
