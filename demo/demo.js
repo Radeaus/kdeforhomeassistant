@@ -757,6 +757,13 @@ function pairDevice(info) {
 
 // The panel's API, kdeforhomeassistant/<command>.
 const COMMANDS_WS = {
+  async input({ subentry_id, command }) {
+    const device = findDevice(subentry_id);
+    if (!device?.connected) throw wsError("not_connected", "Not connected");
+    // Mouse moves are too many to show; a tap shows what a click would do.
+    if (!command.startsWith("move:")) toast(t("remote_sent", { command, name: device.name }));
+    return null;
+  },
   async connect({ host }) {
     await wait(1400);
     host = host.trim();

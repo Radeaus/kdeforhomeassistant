@@ -31,6 +31,7 @@ from .const import (
     SUBENTRY_TYPE_DEVICE,
     default_name,
 )
+from .commands import parse_command
 from .device import read_mac_address
 from .kdeconnect import DeviceInfo, PairingError
 from .kdeconnect.protocol import der_to_pem, filter_device_name
@@ -69,6 +70,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         ws_update_device,
         ws_remove_device,
         ws_command_setup,
+        ws_input,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -538,6 +540,32 @@ def ws_command_setup(
     entry = _loaded_entry(hass)
     device = entry.runtime_data.devices.get(msg["subentry_id"]) if entry else None
     if device is None or not device.open_command_setup():
+        connection.send_error(msg["id"], "not_connected", "Not connected")
+        return
+    connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/input",
+        vol.Required("subentry_id"): cv.string,
+        vol.Required("command"): cv.string,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_input(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Send a remote command straight away; the touchpad sends many of these."""
+    try:
+        body = parse_command(msg["command"])
+    except ValueError:
+        connection.send_error(msg["id"], "invalid_command", msg["command"])
+        return
+    entry = _loaded_entry(hass)
+    device = entry.runtime_data.devices.get(msg["subentry_id"]) if entry else None
+    if device is None or not device.send_input(body):
         connection.send_error(msg["id"], "not_connected", "Not connected")
         return
     connection.send_result(msg["id"])

@@ -136,6 +136,7 @@ const STRINGS = {
     remote_text: "Type text",
     remote_text_help: "Typed where the cursor is on {name}.",
     remote_type: "Type",
+    remote_touchpad: "Drag to move the mouse, tap to click",
     buttons: "Buttons",
     buttons_text: "Commands set up in KDE Connect on {name}.",
     run: "Run",
@@ -329,6 +330,7 @@ const STRINGS = {
     remote_text: "Tekst typen",
     remote_text_help: "Wordt getypt waar de cursor op {name} staat.",
     remote_type: "Typen",
+    remote_touchpad: "Sleep om de muis te bewegen, tik om te klikken",
     buttons: "Knoppen",
     buttons_text: "Opdrachten die in KDE Connect op {name} zijn ingesteld.",
     run: "Uitvoeren",
@@ -528,6 +530,9 @@ const PAIR_RESEND_MAX = 3;
 const isComputer = (type) => ["desktop", "laptop", "unknown"].includes(type);
 
 const MAC_RE = /^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/;
+// Touchpad: pixels on the device per pixel dragged, and how often to send.
+const TOUCHPAD_SPEED = 1.5;
+const TOUCHPAD_INTERVAL = 40;
 
 const esc = (value) =>
   String(value ?? "").replace(
@@ -595,6 +600,10 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onInput(ev));
+    this.shadowRoot.addEventListener("pointerdown", (ev) => this._padDown(ev));
+    this.shadowRoot.addEventListener("pointermove", (ev) => this._padMove(ev));
+    this.shadowRoot.addEventListener("pointerup", (ev) => this._padUp(ev, true));
+    this.shadowRoot.addEventListener("pointercancel", (ev) => this._padUp(ev, false));
     this.shadowRoot.addEventListener("keydown", (ev) => {
       const target = ev.composedPath().find((node) => node.dataset?.enter);
       if (ev.key === "Enter" && target) {
@@ -1383,6 +1392,62 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       });
   }
 
+  // Touchpad: dragging moves the mouse on the device, a short tap clicks.
+
+  _padDown(ev) {
+    const el = ev.composedPath().find((node) => node.classList?.contains("touchpad"));
+    if (!el) return;
+    ev.preventDefault();
+    el.setPointerCapture?.(ev.pointerId);
+    this._drag = { id: el.dataset.id, pointer: ev.pointerId, x: ev.clientX, y: ev.clientY, dx: 0, dy: 0, moved: 0, start: Date.now(), timer: null, failed: false };
+  }
+
+  _padMove(ev) {
+    const drag = this._drag;
+    if (!drag || ev.pointerId !== drag.pointer) return;
+    ev.preventDefault();
+    const dx = ev.clientX - drag.x;
+    const dy = ev.clientY - drag.y;
+    drag.x = ev.clientX;
+    drag.y = ev.clientY;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    drag.dx += dx * TOUCHPAD_SPEED;
+    drag.dy += dy * TOUCHPAD_SPEED;
+    // Gather movement and send it a few times per second, not per event.
+    drag.timer ??= setTimeout(() => this._padFlush(drag), TOUCHPAD_INTERVAL);
+  }
+
+  _padFlush(drag) {
+    drag.timer = null;
+    const dx = Math.trunc(drag.dx);
+    const dy = Math.trunc(drag.dy);
+    if (!dx && !dy) return;
+    drag.dx -= dx;
+    drag.dy -= dy;
+    this._padSend(drag, `move:${dx},${dy}`);
+  }
+
+  _padUp(ev, tap) {
+    const drag = this._drag;
+    if (!drag || ev.pointerId !== drag.pointer) return;
+    this._drag = null;
+    clearTimeout(drag.timer);
+    this._padFlush(drag);
+    if (tap && drag.moved < 8 && Date.now() - drag.start < 350) this._padSend(drag, "click");
+  }
+
+  _padSend(drag, command) {
+    this._ws("input", { subentry_id: drag.id, command }).catch((err) => {
+      if (drag.failed) return;
+      drag.failed = true;
+      this._notice = {
+        type: "error",
+        text: err?.code === "not_connected" ? this._t("not_connected") : this._t("error", { error: err?.message || err?.code || err }),
+      };
+      this._render();
+    });
+  }
+
   _remotePad(d) {
     const entity = d.entities.remote;
     const pad = (command, iconName, cls = "") =>
@@ -1395,6 +1460,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         ${pad("left", "mdi:chevron-left")}${pad("select", "mdi:circle-outline", "ok")}${pad("right", "mdi:chevron-right")}
         ${pad("scroll_up", "mdi:chevron-double-up")}${pad("down", "mdi:chevron-down")}${pad("scroll_down", "mdi:chevron-double-down")}
       </div>
+      <div class="touchpad" data-id="${esc(d.id)}">${icon("mdi:gesture-tap")}<span>${esc(this._t("remote_touchpad"))}</span></div>
       <div class="remote-extra">${extra("click", "mdi:cursor-default-click-outline")}${extra("right_click", "mdi:mouse")}${extra("close", "mdi:window-close")}</div>
       <div class="card-content">${this._textField({ id: "remote-text", field: "edit.remoteText", enter: "remote-type", data: { entity }, label: this._t("remote_text"), value: this._edit.remoteText ?? "", hint: this._t("remote_text_help", { name: d.name }) })}</div>
       <div class="card-actions">${this._button(this._t("remote_type"), "remote-type", { iconName: "mdi:keyboard-outline", data: { entity } })}</div>
@@ -2026,6 +2092,8 @@ ha-card { display: block; overflow: hidden; }
 .remote-pad { display: grid; grid-template-columns: repeat(3, 64px); gap: var(--kde-space-3); justify-content: center; padding: var(--kde-space-4); }
 .remote-pad .pad-button { --ha-icon-button-size: 64px; --mdc-icon-button-size: 64px; --mdc-icon-size: 32px; --ha-icon-button-padding-inline: 16px; border-radius: 50%; background: var(--secondary-background-color); color: var(--primary-text-color); }
 .remote-pad .pad-button.ok { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+.touchpad { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--kde-space-2); height: 200px; margin: 0 var(--kde-space-4) var(--kde-space-3); padding: var(--kde-space-4); box-sizing: border-box; border-radius: 16px; border: 1px dashed var(--divider-color); background: var(--secondary-background-color); color: var(--secondary-text-color); text-align: center; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+.touchpad ha-icon, .touchpad svg { pointer-events: none; }
 .remote-extra { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--kde-space-2); padding: 0 var(--kde-space-4); }
 .empty { text-align: center; padding: var(--kde-space-8) var(--kde-space-6); }
 .empty h2 { font-size: var(--ha-font-size-xl, 20px); font-weight: var(--ha-font-weight-medium, 500); margin: var(--kde-space-4) 0 var(--kde-space-2); }

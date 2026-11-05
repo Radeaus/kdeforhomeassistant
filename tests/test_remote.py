@@ -10,7 +10,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.kdeforhomeassistant.const import DOMAIN
 from custom_components.kdeforhomeassistant.kdeconnect.protocol import Packet
-from custom_components.kdeforhomeassistant.remote import SCROLL_STEP, parse_command
+from custom_components.kdeforhomeassistant.commands import SCROLL_STEP, parse_command
 
 from .fake_device import FakeDevice
 from .test_init import _pair, _setup
@@ -141,4 +141,38 @@ async def test_remote_and_keyboard(hass: HomeAssistant) -> None:
             {"entity_id": REMOTE, "command": "up"},
             blocking=True,
         )
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_input_websocket(hass: HomeAssistant, hass_ws_client) -> None:
+    """The touchpad on the panel sends commands over the websocket."""
+    entry = await _setup(hass)
+    device = FakeDevice("Fake PC", protocol_version=8)
+    await _pair(hass, entry, device)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    await device.connect(entry.runtime_data.hub.tcp_port)
+    await asyncio.sleep(0.3)
+    await hass.async_block_till_done()
+    subentry_id = next(iter(entry.subentries))
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {"type": f"{DOMAIN}/input", "subentry_id": subentry_id, "command": "move:12,-3"}
+    )
+    assert (await client.receive_json())["success"]
+    await device.wait_for(MOUSEPAD, dx=12, dy=-3)
+
+    await client.send_json_auto_id(
+        {"type": f"{DOMAIN}/input", "subentry_id": subentry_id, "command": "fly"}
+    )
+    reply = await client.receive_json()
+    assert reply["error"]["code"] == "invalid_command"
+
+    device.close()
+    await asyncio.sleep(0.2)
+    await client.send_json_auto_id(
+        {"type": f"{DOMAIN}/input", "subentry_id": subentry_id, "command": "click"}
+    )
+    reply = await client.receive_json()
+    assert reply["error"]["code"] == "not_connected"
     assert await hass.config_entries.async_unload(entry.entry_id)

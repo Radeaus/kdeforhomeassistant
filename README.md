@@ -47,6 +47,8 @@ Home Assistant scripts can be shared with a device and then show up under *Run c
 
 ## Remote
 
+On the sidebar page, the **Remote** button of a device opens a remote with arrow buttons, a touchpad to move the mouse (tap to click) and a field to type text.
+
 The remote sends keys and mouse actions the way the KDE Connect app does, so it works with the normal KDE Connect app on the device:
 
 | Device | Works |
