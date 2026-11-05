@@ -18,12 +18,19 @@
         "data_description": {
           "name": "The name your devices show for Home Assistant."
         }
+      },
+      "old_integration": {
+        "title": "The older KDE Connect integration is still installed",
+        "description": "The older KDE Connect integration (\"{name}\") uses the same network ports as KDE for Home Assistant, so only one of them can run. Choose what to do with it. Its pairings can be taken over in the next step.",
+        "menu_options": {
+          "legacy_disable": "Disable it (you can turn it on again later)",
+          "legacy_remove": "Remove it"
+        }
       }
     },
     "abort": {
       "single_instance_allowed": "KDE for Home Assistant is already set up. Open **KDE for Home Assistant** in the sidebar to add a device.",
-      "import_failed": "The files of the older integration could not be read. Choose **Start fresh** instead.",
-      "legacy_running": "The older KDE Connect integration is still running. Both use the same network ports, so remove it first, restart Home Assistant and try again."
+      "import_failed": "The files of the older integration could not be read. Choose **Start fresh** instead."
     },
     "error": {
       "legacy_running": "Remove the older KDE Connect integration first, then try again."
@@ -140,13 +147,28 @@
       "message": "{name} is not connected to Home Assistant."
     },
     "port_in_use": {
-      "message": "Could not open the KDE Connect network ports ({error}). If the older KDE Connect integration is still installed, remove it and restart Home Assistant."
+      "message": "Could not open the KDE Connect network ports ({error}). If the older KDE Connect integration is still installed, disable or remove it under Settings > Repairs."
     }
   },
   "issues": {
     "device_unpaired": {
       "title": "{name} is no longer paired",
       "description": "{name} removed its pairing with Home Assistant, so Home Assistant can no longer control it.\n\nTo fix this, delete the device from the KDE for Home Assistant integration and pair it again."
+    },
+    "legacy_installed": {
+      "title": "The older KDE Connect integration is still installed",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "The older KDE Connect integration is still installed",
+            "description": "The older KDE Connect integration (\"{name}\") uses the same network ports as KDE for Home Assistant. When Home Assistant starts, whichever starts first gets the ports, so KDE for Home Assistant may not run or your devices may connect to the wrong one.\n\nDisable or remove the older integration. KDE for Home Assistant then starts by itself.",
+            "menu_options": {
+              "legacy_disable": "Disable it (you can turn it on again later)",
+              "legacy_remove": "Remove it"
+            }
+          }
+        }
+      }
     }
   }
 }

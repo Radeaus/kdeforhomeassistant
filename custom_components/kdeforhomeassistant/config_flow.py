@@ -54,6 +54,12 @@ from .const import (
     default_name,
 )
 from .device import read_mac_address
+from .legacy import (
+    active_legacy_entries,
+    async_disable_legacy,
+    async_remove_legacy,
+    legacy_name,
+)
 from .kdeconnect import (
     DeviceInfo,
     KdeConnectHub,
@@ -98,14 +104,38 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Offer to take over the pairing of the older integration, if there is one."""
-        if _legacy_running(self.hass):
-            return self.async_abort(reason="legacy_running")
+        if active_legacy_entries(self.hass):
+            return await self.async_step_old_integration()
         legacy = self.hass.config.path(LEGACY_CONFIG_DIR, "certificate.pem")
         if await self.hass.async_add_executor_job(os.path.isfile, legacy):
             return self.async_show_menu(
                 step_id="user", menu_options=["import_legacy", "identity"]
             )
         return await self.async_step_identity()
+
+    async def async_step_old_integration(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Both use the same ports, so the older one has to stop first."""
+        return self.async_show_menu(
+            step_id="old_integration",
+            menu_options=["legacy_disable", "legacy_remove"],
+            description_placeholders={"name": legacy_name(self.hass)},
+        )
+
+    async def async_step_legacy_disable(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Disable the older integration, then continue."""
+        await async_disable_legacy(self.hass)
+        return await self.async_step_user()
+
+    async def async_step_legacy_remove(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Remove the older integration, then continue."""
+        await async_remove_legacy(self.hass)
+        return await self.async_step_user()
 
     async def async_step_identity(
         self, user_input: dict[str, Any] | None = None
@@ -135,7 +165,6 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         except (OSError, ValueError, sqlite3.Error) as err:
             _LOGGER.warning("Could not read the old KDE Connect configuration: %s", err)
             return self.async_abort(reason="import_failed")
-        legacy_entries = self.hass.config_entries.async_entries(LEGACY_DOMAIN)
         errors: dict[str, str] = {}
         if user_input is not None:
             if _legacy_running(self.hass):
@@ -161,14 +190,8 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                         for device in legacy["devices"]
                     ],
                 )
-        default = next(
-            (
-                entry.data.get("name")
-                for entry in legacy_entries
-                if entry.data.get("name")
-            ),
-            default_name(self.hass.config.location_name),
-        )
+        # Not the old name: devices pick up the new one when they connect.
+        default = default_name(self.hass.config.location_name)
         names = ", ".join(device[CONF_NAME] for device in legacy["devices"]) or "-"
         return self.async_show_form(
             step_id="import_legacy",

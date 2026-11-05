@@ -18,12 +18,19 @@
         "data_description": {
           "name": "De naam die je apparaten voor Home Assistant tonen."
         }
+      },
+      "old_integration": {
+        "title": "De oudere KDE Connect-integratie is nog geïnstalleerd",
+        "description": "De oudere KDE Connect-integratie (\"{name}\") gebruikt dezelfde netwerkpoorten als KDE for Home Assistant, dus er kan er maar één draaien. Kies wat je ermee wilt doen. De koppelingen kun je in de volgende stap overnemen.",
+        "menu_options": {
+          "legacy_disable": "Uitschakelen (later weer aan te zetten)",
+          "legacy_remove": "Verwijderen"
+        }
       }
     },
     "abort": {
       "single_instance_allowed": "KDE for Home Assistant is al ingesteld. Open **KDE for Home Assistant** in de zijbalk om een apparaat toe te voegen.",
-      "import_failed": "De bestanden van de oudere integratie konden niet worden gelezen. Kies in plaats daarvan **Opnieuw beginnen**.",
-      "legacy_running": "De oudere KDE Connect-integratie draait nog. Beide gebruiken dezelfde netwerkpoorten. Verwijder die eerst, herstart Home Assistant en probeer het opnieuw."
+      "import_failed": "De bestanden van de oudere integratie konden niet worden gelezen. Kies in plaats daarvan **Opnieuw beginnen**."
     },
     "error": {
       "legacy_running": "Verwijder eerst de oudere KDE Connect-integratie en probeer het daarna opnieuw."
@@ -140,13 +147,28 @@
       "message": "{name} is niet verbonden met Home Assistant."
     },
     "port_in_use": {
-      "message": "De KDE Connect-netwerkpoorten konden niet worden geopend ({error}). Is de oudere KDE Connect-integratie nog geïnstalleerd, verwijder die dan en herstart Home Assistant."
+      "message": "De KDE Connect-netwerkpoorten konden niet worden geopend ({error}). Is de oudere KDE Connect-integratie nog geïnstalleerd, schakel die dan uit of verwijder hem via Instellingen > Reparaties."
     }
   },
   "issues": {
     "device_unpaired": {
       "title": "{name} is niet meer gekoppeld",
       "description": "{name} heeft de koppeling met Home Assistant verwijderd, waardoor Home Assistant het apparaat niet meer kan bedienen.\n\nVerwijder het apparaat uit de integratie KDE for Home Assistant en koppel het opnieuw om dit op te lossen."
+    },
+    "legacy_installed": {
+      "title": "De oudere KDE Connect-integratie is nog geïnstalleerd",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "De oudere KDE Connect-integratie is nog geïnstalleerd",
+            "description": "De oudere KDE Connect-integratie (\"{name}\") gebruikt dezelfde netwerkpoorten als KDE for Home Assistant. Bij het opstarten krijgt de integratie die het eerst start de poorten, dus KDE for Home Assistant start dan misschien niet of je apparaten verbinden met de verkeerde.\n\nSchakel de oudere integratie uit of verwijder hem. KDE for Home Assistant start daarna vanzelf.",
+            "menu_options": {
+              "legacy_disable": "Uitschakelen (later weer aan te zetten)",
+              "legacy_remove": "Verwijderen"
+            }
+          }
+        }
+      }
     }
   }
 }

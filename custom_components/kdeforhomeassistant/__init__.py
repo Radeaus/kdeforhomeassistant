@@ -7,13 +7,20 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from homeassistant.components import network, persistent_notification
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import (
+    SIGNAL_CONFIG_ENTRY_CHANGED,
+    ConfigEntry,
+    ConfigEntryChange,
+)
 from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send,
+)
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 
@@ -25,6 +32,7 @@ from .const import (
     DEFAULT_NAME,
     DOMAIN,
     INCOMING_CAPABILITIES,
+    LEGACY_DOMAIN,
     OUTGOING_CAPABILITIES,
     PAIR_NOTIFICATION_ID,
     PANEL_URL_PATH,
@@ -34,6 +42,7 @@ from .const import (
 from .device import KdeConnectDevice
 from .kdeconnect import Identity, KdeConnectHub
 from .kdeconnect.protocol import UDP_PORT
+from .legacy import async_check_legacy_issue
 from .panel import async_register_panel, async_remove_panel
 from .websocket import async_register_websocket_commands
 
@@ -95,6 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -
     # Add the panel first, so it is there to explain what is wrong when the
     # ports cannot be opened.
     await async_register_panel(hass)
+    async_check_legacy_issue(hass)
     hub = KdeConnectHub(
         identity_from_entry(entry),
         incoming_capabilities=INCOMING_CAPABILITIES,
@@ -177,6 +187,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -
                 hosts.add(info.host)
         hub.announce(hosts)
 
+    @callback
+    def config_entry_changed(change: ConfigEntryChange, changed: ConfigEntry) -> None:
+        if changed.domain == LEGACY_DOMAIN:
+            async_check_legacy_issue(hass)
+
+    entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_CONFIG_ENTRY_CHANGED, config_entry_changed
+        )
+    )
     entry.async_on_unload(async_track_time_interval(hass, announce, ANNOUNCE_INTERVAL))
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     hass.async_create_task(announce(), eager_start=True)

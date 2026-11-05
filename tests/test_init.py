@@ -399,16 +399,3 @@ async def test_panel_shown_when_ports_busy(hass: HomeAssistant) -> None:
         assert "Address in use" in state["reason"]
         await hass.config_entries.async_unload(entry.entry_id)
 
-
-async def test_start_fresh_blocked_while_legacy_runs(hass: HomeAssistant) -> None:
-    """Setup stops early while bartv2/kde_connect still holds the ports."""
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-    MockConfigEntry(domain="kde_connect", state=ConfigEntryState.LOADED).add_to_hass(
-        hass
-    )
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "legacy_running"

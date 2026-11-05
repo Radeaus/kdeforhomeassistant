@@ -23,7 +23,7 @@ You need KDE Connect 23.08 or newer on each computer or phone, on the same netwo
 4. **Add a device.** Open **KDE for Home Assistant** in the sidebar and select **Add device**. The wizard walks you through it: name Home Assistant, open KDE Connect on the device, choose the device, accept the pairing request, then pick buttons, scripts and Wake-on-LAN.
 5. **Repeat step 4** for every other computer or phone.
 
-Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Remove that integration first (both use the same ports). Step 3 then offers to take over its pairings.
+Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Both use the same network ports, so only one can run. Step 3 asks whether to **disable** or **remove** the older integration, and then offers to take over its pairings, so your devices stay paired.
 
 You can also select **Pair** in KDE Connect on the device. Home Assistant shows the request in the sidebar and as a notification; accept it within 30 seconds.
 
@@ -51,9 +51,9 @@ Home Assistant scripts can be shared with a device and then show up under *Run c
 ## Troubleshooting
 
 - **No "KDE for Home Assistant" in the sidebar?** The page is only shown to administrators. Restart Home Assistant after installing, and reload the browser page. If it is still missing, open **Settings > Devices & services > KDE for Home Assistant** and check for an error there.
-- **"Could not open the KDE Connect network ports"?** Another program uses port 1716, usually the older [bartv2/kde_connect](https://github.com/bartv2/kde_connect) integration. Remove that integration, restart Home Assistant, and the sidebar page shows up.
+- **"Could not open the KDE Connect network ports"?** Another program uses port 1716, usually the older [bartv2/kde_connect](https://github.com/bartv2/kde_connect) integration. Open **Settings > Repairs** and choose to disable or remove it; KDE for Home Assistant then starts by itself. On version 1.0.0, disable or remove the *KDE Connect* integration under **Settings > Devices & services** and restart Home Assistant.
 - **Asked to pick an area for some devices?** Those are the computers and phones that are paired, for example the ones taken over from the older integration. Pick a room, or skip it.
-- **Devices show the wrong name for Home Assistant?** Change it on the sidebar page under *Settings*, or with **Configure** on the integration. When you take over pairings, the old name is kept.
+- **Devices show the wrong name for Home Assistant?** Change it on the sidebar page under *Settings*, or with **Configure** on the integration. Version 1.0.0 suggested the old name ("HomeAssistant") when taking over pairings.
 
 ## Example
 

@@ -4,7 +4,8 @@
   "after_dependencies": [
     "frontend",
     "panel_custom",
-    "persistent_notification"
+    "persistent_notification",
+    "repairs"
   ],
   "codeowners": [
     "@Radeaus"
@@ -24,5 +25,5 @@
   ],
   "requirements": [],
   "single_config_entry": true,
-  "version": "1.1.0b1"
+  "version": "1.1.0b2"
 }
