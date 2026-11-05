@@ -366,6 +366,7 @@ const TEXT = {
     not_in_demo: "{page} is not part of this demo. Only the KDE for Home Assistant page is.",
     script_editor: "The script editor",
     ringing: "{name} is ringing",
+    remote_sent: "Sent “{command}” to {name}",
     woke: "Wake-on-LAN sent. {name} is starting up…",
     ran: "Ran “{command}” on {name}",
     ran_hidden: "Pressed {button}",
@@ -423,6 +424,7 @@ const TEXT = {
     not_in_demo: "{page} zit niet in deze demo. Alleen de pagina KDE for Home Assistant.",
     script_editor: "De scripteditor",
     ringing: "{name} gaat over",
+    remote_sent: "„{command}” verstuurd naar {name}",
     woke: "Wake-on-LAN verstuurd. {name} start op…",
     ran: "“{command}” uitgevoerd op {name}",
     ran_hidden: "{button} ingedrukt",
@@ -607,6 +609,7 @@ function assignEntities(device) {
   if (device.lock) ent.screen_lock ??= uniqueEntityId(`lock.${s}_screen`);
   ent.notify ??= uniqueEntityId(`notify.${s}`);
   ent.ring ??= uniqueEntityId(`button.${s}_ring`);
+  ent.remote ??= uniqueEntityId(`remote.${s}_remote`);
   if (device.mac) ent.wake ??= uniqueEntityId(`button.${s}_wake_up`);
   else delete ent.wake;
   for (const c of device.commands) {
@@ -673,6 +676,7 @@ function buildStates() {
     }
     put(e.notify, live("unknown"), { friendly_name: d.name });
     put(e.ring, live(d.pressed[e.ring] || "unknown"), { friendly_name: `${d.name} Ring`, icon: "mdi:bell-ring" });
+    put(e.remote, d.connected ? "on" : "off", { friendly_name: `${d.name} Remote`, icon: "mdi:remote-tv" });
     if (e.wake) put(e.wake, d.pressed[e.wake] || "unknown", { friendly_name: `${d.name} Wake up`, icon: "mdi:power" });
     for (const c of d.commands) {
       const entityId = d.commandEntities[c.key];
@@ -917,6 +921,9 @@ async function callService(domain, service, data) {
     toast(t(service === "lock" ? "locked" : "unlocked", { name: device.name }));
   } else if (domain === "notify") {
     toast(t("notified", { name: device.name, message: data.message }));
+  } else if (domain === "remote") {
+    const command = String(data.command).replace(/^text:/, "");
+    toast(t("remote_sent", { command, name: device.name }));
   } else if (key === "ring") {
     toast(t("ringing", { name: device.name }));
   } else if (key === "wake") {

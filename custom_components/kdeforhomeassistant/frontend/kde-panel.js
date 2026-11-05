@@ -120,6 +120,22 @@ const STRINGS = {
     lock: "Lock screen",
     unlock: "Unlock screen",
     turn_on: "Turn on",
+    remote: "Remote",
+    remote_up: "Up",
+    remote_down: "Down",
+    remote_left: "Left",
+    remote_right: "Right",
+    remote_select: "OK",
+    remote_back: "Back",
+    remote_home: "Home",
+    remote_scroll_up: "Scroll up",
+    remote_scroll_down: "Scroll down",
+    remote_close: "Close window",
+    remote_click: "Click",
+    remote_right_click: "Right click",
+    remote_text: "Type text",
+    remote_text_help: "Typed where the cursor is on {name}.",
+    remote_type: "Type",
     buttons: "Buttons",
     buttons_text: "Commands set up in KDE Connect on {name}.",
     run: "Run",
@@ -297,6 +313,22 @@ const STRINGS = {
     lock: "Scherm vergrendelen",
     unlock: "Scherm ontgrendelen",
     turn_on: "Aanzetten",
+    remote: "Afstandsbediening",
+    remote_up: "Omhoog",
+    remote_down: "Omlaag",
+    remote_left: "Links",
+    remote_right: "Rechts",
+    remote_select: "OK",
+    remote_back: "Terug",
+    remote_home: "Home",
+    remote_scroll_up: "Omhoog scrollen",
+    remote_scroll_down: "Omlaag scrollen",
+    remote_close: "Venster sluiten",
+    remote_click: "Klik",
+    remote_right_click: "Rechtsklik",
+    remote_text: "Tekst typen",
+    remote_text_help: "Wordt getypt waar de cursor op {name} staat.",
+    remote_type: "Typen",
     buttons: "Knoppen",
     buttons_text: "Opdrachten die in KDE Connect op {name} zijn ingesteld.",
     run: "Uitvoeren",
@@ -555,6 +587,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     this._wiz = null;
     this._notice = null;
     this._edit = {};
+    this._remoteFor = null;
     this._busy = new Set();
     this._unsubs = {};
     this._scriptsKey = "";
@@ -1164,6 +1197,21 @@ class KdeForHomeAssistantPanel extends HTMLElement {
           this._hass.callService("lock", action, { entity_id: data.entity })
         );
         return;
+      case "remote-toggle":
+        this._remoteFor = this._remoteFor === data.id ? null : data.id;
+        this._render();
+        return;
+      case "remote-send":
+        this._remoteSend(data.entity, data.command);
+        return;
+      case "remote-type": {
+        const text = this._edit.remoteText ?? "";
+        if (!text) return;
+        this._edit.remoteText = "";
+        this._remoteSend(data.entity, "text:" + text);
+        this._render();
+        return;
+      }
       case "more-info":
         this.dispatchEvent(
           new CustomEvent("hass-more-info", {
@@ -1320,6 +1368,37 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     await this._run("scripts", () =>
       this._ws("update_device", { subentry_id: id, scripts: [...set] })
     );
+  }
+
+  _remoteSend(entity, command) {
+    // No busy state: remote buttons are pressed quickly one after another.
+    this._hass
+      .callService("remote", "send_command", { entity_id: entity, command })
+      .catch((err) => {
+        this._notice = {
+          type: "error",
+          text: this._t("error", { error: err?.message || err?.code || err }),
+        };
+        this._render();
+      });
+  }
+
+  _remotePad(d) {
+    const entity = d.entities.remote;
+    const pad = (command, iconName, cls = "") =>
+      `<ha-icon-button class="pad-button ${cls}" data-action="remote-send" data-entity="${esc(entity)}" data-command="${command}" label="${esc(this._t("remote_" + command))}">${icon(iconName)}</ha-icon-button>`;
+    const extra = (command, iconName) =>
+      this._button(this._t("remote_" + command), "remote-send", { appearance: "plain", iconName, data: { entity, command } });
+    return `<ha-card header="${esc(this._t("remote"))}">
+      <div class="remote-pad">
+        ${pad("home", "mdi:home-outline")}${pad("up", "mdi:chevron-up")}${pad("back", "mdi:arrow-u-left-top")}
+        ${pad("left", "mdi:chevron-left")}${pad("select", "mdi:circle-outline", "ok")}${pad("right", "mdi:chevron-right")}
+        ${pad("scroll_up", "mdi:chevron-double-up")}${pad("down", "mdi:chevron-down")}${pad("scroll_down", "mdi:chevron-double-down")}
+      </div>
+      <div class="remote-extra">${extra("click", "mdi:cursor-default-click-outline")}${extra("right_click", "mdi:mouse")}${extra("close", "mdi:window-close")}</div>
+      <div class="card-content">${this._textField({ id: "remote-text", field: "edit.remoteText", enter: "remote-type", data: { entity }, label: this._t("remote_text"), value: this._edit.remoteText ?? "", hint: this._t("remote_text_help", { name: d.name }) })}</div>
+      <div class="card-actions">${this._button(this._t("remote_type"), "remote-type", { iconName: "mdi:keyboard-outline", data: { entity } })}</div>
+    </ha-card>`;
   }
 
   async _run(key, fn) {
@@ -1526,6 +1605,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       <div class="card-actions start">
         ${ent.ring ? this._button(this._t("ring"), "press", { appearance: "filled", iconName: "mdi:bell-ring-outline", data: { entity: ent.ring }, disabled: !d.connected, busy: this._busy.has("press" + ent.ring) }) : ""}
         ${ent.screen_lock ? this._button(this._t(locked ? "unlock" : "lock"), locked ? "unlock" : "lock", { appearance: "filled", iconName: locked ? "mdi:lock-open-variant-outline" : "mdi:lock-outline", data: { entity: ent.screen_lock }, disabled: !d.connected, busy: this._busy.has("lock") || this._busy.has("unlock") }) : ""}
+        ${ent.remote ? this._button(this._t("remote"), "remote-toggle", { appearance: this._remoteFor === d.id ? "filled" : "outlined", iconName: "mdi:remote-tv", data: { id: d.id }, disabled: !d.connected }) : ""}
         ${ent.wake && !d.connected ? this._button(this._t("turn_on"), "press", { appearance: "filled", iconName: "mdi:power", data: { entity: ent.wake }, busy: this._busy.has("press" + ent.wake) }) : ""}
       </div></ha-card>`;
 
@@ -1609,6 +1689,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     return `${this._toolbar(d.name, { back: true })}
       <div class="content"><div class="container">
         ${this._requests()}${this._notices()}${status}
+        ${ent.remote && d.connected && this._remoteFor === d.id ? this._remotePad(d) : ""}
         <ha-card header="${esc(this._t("buttons"))}">
           <p class="card-text">${esc(this._t("buttons_text", { name: d.name }))}</p>${commands}
           <div class="card-actions">${isComputer(d.type) ? this._button(this._t("helper_open"), "helper-open", { appearance: "plain", iconName: "mdi:creation-outline", data: { id: d.id } }) : ""}${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:cog-outline", data: { id: d.id, name: d.name }, disabled: !d.connected, busy: this._busy.has("setup" + d.id) })}</div></ha-card>
@@ -1942,6 +2023,10 @@ ha-card { display: block; overflow: hidden; }
 .card-text { margin: 0; padding: 0 var(--kde-space-4) var(--kde-space-2); color: var(--secondary-text-color); }
 .card-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--kde-space-2); padding: var(--kde-space-2) var(--kde-space-4) var(--kde-space-4); }
 .card-actions.start { justify-content: flex-start; }
+.remote-pad { display: grid; grid-template-columns: repeat(3, 64px); gap: var(--kde-space-3); justify-content: center; padding: var(--kde-space-4); }
+.remote-pad .pad-button { --ha-icon-button-size: 64px; --mdc-icon-button-size: 64px; --mdc-icon-size: 32px; --ha-icon-button-padding-inline: 16px; border-radius: 50%; background: var(--secondary-background-color); color: var(--primary-text-color); }
+.remote-pad .pad-button.ok { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+.remote-extra { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--kde-space-2); padding: 0 var(--kde-space-4); }
 .empty { text-align: center; padding: var(--kde-space-8) var(--kde-space-6); }
 .empty h2 { font-size: var(--ha-font-size-xl, 20px); font-weight: var(--ha-font-weight-medium, 500); margin: var(--kde-space-4) 0 var(--kde-space-2); }
 .empty p { color: var(--secondary-text-color); margin: 0 auto var(--kde-space-6); max-width: 420px; }
