@@ -31,6 +31,7 @@ PACKET_TYPE_NOTIFICATION = "kdeconnect.notification"
 PACKET_TYPE_FINDMYPHONE_REQUEST = "kdeconnect.findmyphone.request"
 PACKET_TYPE_LOCK = "kdeconnect.lock"
 PACKET_TYPE_LOCK_REQUEST = "kdeconnect.lock.request"
+PACKET_TYPE_SHARE_REQUEST = "kdeconnect.share.request"
 PACKET_TYPE_MOUSEPAD_REQUEST = "kdeconnect.mousepad.request"
 PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE = "kdeconnect.mousepad.keyboardstate"
 PACKET_TYPE_MPRIS = "kdeconnect.mpris"
@@ -73,10 +74,16 @@ class Packet:
 
     type: str
     body: dict[str, Any] = field(default_factory=dict)
+    # A file that comes with the packet: its size, and where to fetch it.
+    payload_size: int | None = None
+    payload_port: int | None = None
 
     def serialize(self) -> bytes:
         """Return the packet as a newline terminated JSON line."""
         data = {"id": int(time.time() * 1000), "type": self.type, "body": self.body}
+        if self.payload_size is not None:
+            data["payloadSize"] = self.payload_size
+            data["payloadTransferInfo"] = {"port": self.payload_port}
         return json.dumps(data, separators=(",", ":")).encode() + b"\n"
 
     @classmethod
@@ -89,7 +96,15 @@ class Packet:
         if not isinstance(data, dict) or not isinstance(data.get("type"), str):
             raise ProtocolError("Packet has no type")
         body = data.get("body")
-        return cls(data["type"], body if isinstance(body, dict) else {})
+        size = data.get("payloadSize")
+        info = data.get("payloadTransferInfo")
+        port = info.get("port") if isinstance(info, dict) else None
+        return cls(
+            data["type"],
+            body if isinstance(body, dict) else {},
+            payload_size=size if isinstance(size, int) and size >= 0 else None,
+            payload_port=port if isinstance(port, int) and 0 < port < 65536 else None,
+        )
 
 
 def is_valid_device_id(device_id: Any) -> bool:

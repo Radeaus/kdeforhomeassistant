@@ -32,7 +32,7 @@ from .const import (
     default_name,
 )
 from .commands import parse_command
-from .device import read_mac_address
+from .device import OWN_COMMAND_NAMES, read_mac_address
 from .kdeconnect import DeviceInfo, PairingError
 from .kdeconnect.protocol import der_to_pem, filter_device_name
 
@@ -50,6 +50,7 @@ ENTITY_KEYS = (
     "media_player",
     "remote",
     "keyboard",
+    "screen",
     "notify",
     "ring",
     "wake",
@@ -71,6 +72,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         ws_remove_device,
         ws_command_setup,
         ws_input,
+        ws_screenshot,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -160,6 +162,12 @@ def build_state(hass: HomeAssistant) -> dict[str, Any]:
                 "commands": sorted(
                     commands.values(), key=lambda item: item["name"].lower()
                 ),
+                # Whether the device has a Screenshot command for its screen.
+                "can_screenshot": any(
+                    command["name"].strip().casefold()
+                    in OWN_COMMAND_NAMES["screenshot"]
+                    for command in commands.values()
+                ),
                 "entities": {
                     key: reg.entity_id
                     for key in ENTITY_KEYS
@@ -195,6 +203,8 @@ def build_state(hass: HomeAssistant) -> dict[str, Any]:
     return {
         "configured": True,
         "loaded": loaded,
+        # Our own KDE Connect id, for commands like "kdeconnect-cli -d <id> --share".
+        "self_id": entry.data[CONF_DEVICE_ID],
         "reason": None if loaded else entry.reason,
         "name": entry.options.get(CONF_NAME) or entry.title,
         "default_name": default_name(hass.config.location_name),
@@ -567,5 +577,25 @@ def ws_input(
     device = entry.runtime_data.devices.get(msg["subentry_id"]) if entry else None
     if device is None or not device.send_input(body):
         connection.send_error(msg["id"], "not_connected", "Not connected")
+        return
+    connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/screenshot", vol.Required("subentry_id"): cv.string}
+)
+@websocket_api.require_admin
+@callback
+def ws_screenshot(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Ask the device for a new screenshot."""
+    entry = _loaded_entry(hass)
+    device = entry.runtime_data.devices.get(msg["subentry_id"]) if entry else None
+    if device is None or not device.connected:
+        connection.send_error(msg["id"], "not_connected", "Not connected")
+        return
+    if not device.take_screenshot():
+        connection.send_error(msg["id"], "no_screenshot_command", "No Screenshot command")
         return
     connection.send_result(msg["id"])

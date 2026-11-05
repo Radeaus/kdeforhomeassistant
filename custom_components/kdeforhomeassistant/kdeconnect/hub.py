@@ -63,6 +63,11 @@ class Link(asyncio.Protocol):
         self.certificate_der: bytes | None = None
 
     @property
+    def host(self) -> str | None:
+        """Return the address the device connected from."""
+        return self._host
+
+    @property
     def ready(self) -> bool:
         """Return whether the link is encrypted and identified."""
         return self._state == "ready"
@@ -619,6 +624,37 @@ class KdeConnectHub:
     def is_link_connected(self, device_id: str) -> bool:
         """Return whether any device, trusted or not, has a link to us."""
         return device_id in self._links
+
+    async def async_download_payload(
+        self, device_id: str, port: int, size: int, timeout: float = 30
+    ) -> bytes:
+        """Fetch the file a trusted device offers on a port.
+
+        The device listens on the port; we connect, and the TLS roles are
+        the other way round from the main link: the device is the TLS server.
+        Raises OSError when the download fails.
+        """
+        link = self._links.get(device_id)
+        pinned = self._trusted.get(device_id)
+        if link is None or pinned is None or link.host is None:
+            raise OSError(f"{device_id} is not connected")
+        async with asyncio.timeout(timeout):
+            reader, writer = await asyncio.open_connection(
+                link.host, port, ssl=self.ssl_context, server_hostname=None
+            )
+            try:
+                ssl_object = writer.get_extra_info("ssl_object")
+                der = ssl_object.getpeercert(binary_form=True) if ssl_object else None
+                if der != pinned:
+                    raise OSError("the device presented another certificate")
+                try:
+                    return await reader.readexactly(size)
+                except asyncio.IncompleteReadError as err:
+                    raise OSError("the transfer stopped early") from err
+            finally:
+                writer.close()
+                with contextlib.suppress(OSError, ssl.SSLError):
+                    await writer.wait_closed()
 
     def send(self, device_id: str, packet: Packet) -> bool:
         """Send a packet to a trusted device."""

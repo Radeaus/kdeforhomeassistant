@@ -39,6 +39,7 @@ Per paired device:
 | `media_player` Media | What plays on the device (Spotify, a browser, …): play/pause, next/previous, seek, choose the player, and set or mute the system volume |
 | `remote` Remote | Keys, text and mouse actions, like the remote in the KDE Connect app. `turn_on` wakes the device (needs a MAC address) |
 | `text` Keyboard | Types whatever you enter on the device |
+| `image` Screen | The last screenshot of the device (see [Screen](#screen)) |
 | `button` Ring | Find-my-device sound |
 | `button` Wake up | Wake-on-LAN (needs a MAC address) |
 | `button` per run command | Runs the commands configured in KDE Connect on the device |
@@ -107,6 +108,17 @@ cards:
     icon: mdi:chevron-double-down
     tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: scroll_down}}
 ```
+
+## Screen
+
+Home Assistant can show what is on a computer's screen, as a screenshot you refresh (not live video). The computer takes the screenshot with a run command and sends it through KDE Connect:
+
+1. On the computer, open KDE Connect > *Run command* and add a command named **Screenshot** (or *Schermafbeelding*). The sidebar page shows the exact line to use, with Home Assistant's id filled in, for example:
+   - GNOME, Cinnamon, Xfce, MATE: `gnome-screenshot -f /tmp/home-assistant-screen.png && kdeconnect-cli -d <id> --share /tmp/home-assistant-screen.png`
+   - KDE Plasma: `spectacle -b -n -f -o /tmp/home-assistant-screen.png && kdeconnect-cli -d <id> --share /tmp/home-assistant-screen.png`
+2. Open the device's **Remote** on the sidebar page and select **Refresh**, or press the *Screenshot* button entity. The picture shows up on the page and in the `image` entity.
+
+Only pictures (PNG, JPEG, WebP, up to 25 MB) are kept, and only the latest one, in memory.
 
 ## Tips
 

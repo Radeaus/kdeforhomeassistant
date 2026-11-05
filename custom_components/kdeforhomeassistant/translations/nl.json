@@ -150,6 +150,11 @@
       "keyboard": {
         "name": "Toetsenbord"
       }
+    },
+    "image": {
+      "screen": {
+        "name": "Scherm"
+      }
     }
   },
   "exceptions": {

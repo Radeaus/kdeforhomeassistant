@@ -66,6 +66,7 @@ PAIR_MESSAGES = {
 PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.IMAGE,
     Platform.LOCK,
     Platform.MEDIA_PLAYER,
     Platform.NOTIFY,

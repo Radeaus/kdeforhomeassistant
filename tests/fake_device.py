@@ -34,6 +34,7 @@ CAPABILITIES = [
     "kdeconnect.systemvolume.request",
     "kdeconnect.mousepad.request",
     "kdeconnect.mousepad.keyboardstate",
+    "kdeconnect.share.request",
 ]
 
 
@@ -170,6 +171,33 @@ class FakeDevice:
                                 {"name": sink["name"], key: body[key]},
                             )
                         )
+
+    async def share(self, filename: str, data: bytes) -> None:
+        """Share a file like KDE Connect does: offer it on a port and wait.
+
+        The receiver connects to the port and we are the TLS server there.
+        """
+        loop = asyncio.get_running_loop()
+        context = await loop.run_in_executor(None, self._server_context)
+        served = asyncio.Event()
+
+        async def serve(reader, writer) -> None:
+            writer.write(data)
+            await writer.drain()
+            writer.close()
+            served.set()
+
+        server = await asyncio.start_server(serve, "127.0.0.1", 0, ssl=context)
+        port = server.sockets[0].getsockname()[1]
+        packet = Packet("kdeconnect.share.request", {"filename": filename, "open": False})
+        packet.payload_size = len(data)
+        packet.payload_port = port
+        self.send(packet)
+        try:
+            async with asyncio.timeout(10):
+                await served.wait()
+        finally:
+            server.close()
 
     def send_commands(self) -> None:
         """Send the configured run commands."""

@@ -9,6 +9,7 @@ import { ICONS } from "./icons.js";
 
 const PANEL_PATH = "/kde-for-home-assistant";
 const PANEL_TAG = "kde-for-home-assistant-panel";
+const DEMO_SELF_ID = "d3m0c0ffee5ca1ab1e0000a5515747a1";
 
 const esc = (value) =>
   String(value ?? "").replace(
@@ -502,7 +503,7 @@ const COMMANDS = {
   volup: ["Volume up", "pactl set-sink-volume @DEFAULT_SINK@ +5%"],
   voldown: ["Volume down", "pactl set-sink-volume @DEFAULT_SINK@ -5%"],
   steam: ["Open Steam", "steam"],
-  screenshot: ["Take a screenshot", "spectacle --background --nonotify --fullscreen"],
+  screenshot: ["Screenshot", `spectacle -b -n -f -o /tmp/home-assistant-screen.png && kdeconnect-cli -d ${DEMO_SELF_ID} --share /tmp/home-assistant-screen.png`],
 };
 const command = (id) => ({ key: randomHex(4), name: COMMANDS[id][0], command: COMMANDS[id][1] });
 
@@ -610,12 +611,32 @@ function assignEntities(device) {
   ent.notify ??= uniqueEntityId(`notify.${s}`);
   ent.ring ??= uniqueEntityId(`button.${s}_ring`);
   ent.remote ??= uniqueEntityId(`remote.${s}_remote`);
+  ent.screen ??= uniqueEntityId(`image.${s}_screen`);
   if (device.mac) ent.wake ??= uniqueEntityId(`button.${s}_wake_up`);
   else delete ent.wake;
   for (const c of device.commands) {
     if (device.hidden.has(c.key)) delete device.commandEntities[c.key];
     else device.commandEntities[c.key] ??= uniqueEntityId(`button.${s}_${slug(c.name)}`);
   }
+}
+
+function canScreenshot(device) {
+  return device.commands.some((c) => /^(screenshot|schermafbeelding)$/i.test(c.name.trim()));
+}
+
+// A made-up screenshot: a desktop with a window and the current time.
+function fakeScreen(device) {
+  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d99f3"/><stop offset="1" stop-color="#232629"/></linearGradient></defs>
+<rect width="1280" height="720" fill="url(#g)"/>
+<rect x="160" y="110" width="760" height="440" rx="10" fill="#fcfcfc"/><rect x="160" y="110" width="760" height="44" rx="10" fill="#dee0e2"/>
+<text x="190" y="140" font-family="sans-serif" font-size="20" fill="#232629">Dolphin — Home</text>
+<rect x="200" y="190" width="300" height="20" rx="4" fill="#d0d4d8"/><rect x="200" y="230" width="460" height="20" rx="4" fill="#d0d4d8"/><rect x="200" y="270" width="380" height="20" rx="4" fill="#d0d4d8"/>
+<rect x="0" y="676" width="1280" height="44" fill="#232629" opacity=".92"/>
+<text x="1250" y="705" text-anchor="end" font-family="sans-serif" font-size="20" fill="#fcfcfc">${time}</text>
+<text x="24" y="705" font-family="sans-serif" font-size="20" fill="#fcfcfc">${device.name}</text></svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
 function buildState() {
@@ -626,6 +647,7 @@ function buildState() {
     loaded: true,
     name: world.name,
     default_name: world.defaultName,
+    self_id: DEMO_SELF_ID,
     devices: world.devices
       .map((d) => ({
         id: d.id,
@@ -646,6 +668,7 @@ function buildState() {
           }))
           .sort(byName),
         entities: { ...d.entities },
+        can_screenshot: canScreenshot(d),
       }))
       .sort(byName),
     discovered: world.discovered
@@ -677,6 +700,7 @@ function buildStates() {
     put(e.notify, live("unknown"), { friendly_name: d.name });
     put(e.ring, live(d.pressed[e.ring] || "unknown"), { friendly_name: `${d.name} Ring`, icon: "mdi:bell-ring" });
     put(e.remote, d.connected ? "on" : "off", { friendly_name: `${d.name} Remote`, icon: "mdi:remote-tv" });
+    put(e.screen, d.screenTime || "unknown", { friendly_name: `${d.name} Screen`, ...(d.screenUrl ? { entity_picture: d.screenUrl } : {}) });
     if (e.wake) put(e.wake, d.pressed[e.wake] || "unknown", { friendly_name: `${d.name} Wake up`, icon: "mdi:power" });
     for (const c of d.commands) {
       const entityId = d.commandEntities[c.key];
@@ -757,6 +781,18 @@ function pairDevice(info) {
 
 // The panel's API, kdeforhomeassistant/<command>.
 const COMMANDS_WS = {
+  async screenshot({ subentry_id }) {
+    await wait(200);
+    const device = findDevice(subentry_id);
+    if (!device?.connected) throw wsError("not_connected", "Not connected");
+    if (!canScreenshot(device)) throw wsError("no_screenshot_command", "No Screenshot command");
+    later(1200, () => {
+      device.screenUrl = fakeScreen(device);
+      device.screenTime = new Date().toISOString();
+      changed();
+    });
+    return null;
+  },
   async input({ subentry_id, command }) {
     const device = findDevice(subentry_id);
     if (!device?.connected) throw wsError("not_connected", "Not connected");

@@ -137,6 +137,14 @@ const STRINGS = {
     remote_text_help: "Typed where the cursor is on {name}.",
     remote_type: "Type",
     remote_touchpad: "Drag to move the mouse, tap to click",
+    screen: "Screen",
+    screen_alt: "Screen of {name}",
+    screen_refresh: "Refresh",
+    screen_empty: "No screenshot yet. Select Refresh.",
+    screen_setup: "To see the screen, add a command named “Screenshot” on {name} with the line for its desktop:",
+    screen_gnome: "Linux: GNOME, Cinnamon, Xfce, MATE",
+    screen_plasma: "Linux: KDE Plasma",
+    screen_timeout: "No screenshot arrived. Check the Screenshot command on {name}.",
     buttons: "Buttons",
     buttons_text: "Commands set up in KDE Connect on {name}.",
     run: "Run",
@@ -331,6 +339,14 @@ const STRINGS = {
     remote_text_help: "Wordt getypt waar de cursor op {name} staat.",
     remote_type: "Typen",
     remote_touchpad: "Sleep om de muis te bewegen, tik om te klikken",
+    screen: "Scherm",
+    screen_alt: "Scherm van {name}",
+    screen_refresh: "Vernieuwen",
+    screen_empty: "Nog geen schermafbeelding. Kies Vernieuwen.",
+    screen_setup: "Om het scherm te zien, voeg je op {name} een opdracht toe met de naam “Schermafbeelding” en de regel voor het bureaublad:",
+    screen_gnome: "Linux: GNOME, Cinnamon, Xfce, MATE",
+    screen_plasma: "Linux: KDE Plasma",
+    screen_timeout: "Er kwam geen schermafbeelding binnen. Controleer de opdracht Schermafbeelding op {name}.",
     buttons: "Knoppen",
     buttons_text: "Opdrachten die in KDE Connect op {name} zijn ingesteld.",
     run: "Uitvoeren",
@@ -632,7 +648,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       .map((s) => s.entity_id + s.name)
       .join("|");
     const lock = Object.values(this._state?.devices || {})
-      .map((d) => this._hass.states[d.entities?.screen_lock]?.state)
+      .map((d) => this._hass.states[d.entities?.screen_lock]?.state + "/" + this._hass.states[d.entities?.screen]?.state)
       .join("|");
     if (key + lock !== this._scriptsKey) {
       this._scriptsKey = key + lock;
@@ -1206,6 +1222,20 @@ class KdeForHomeAssistantPanel extends HTMLElement {
           this._hass.callService("lock", action, { entity_id: data.entity })
         );
         return;
+      case "screen-refresh": {
+        const d = this._device(data.id);
+        const before = this._hass.states[d?.entities?.screen]?.state;
+        await this._run("screen" + data.id, async () => {
+          await this._ws("screenshot", { subentry_id: data.id });
+          // Wait for the new picture; the command takes a moment on the device.
+          for (let i = 0; i < 40; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            if (this._hass.states[d.entities.screen]?.state !== before) return;
+          }
+          throw new Error(this._t("screen_timeout", { name: d.name }));
+        });
+        return;
+      }
       case "remote-toggle":
         this._remoteFor = this._remoteFor === data.id ? null : data.id;
         this._render();
@@ -1448,13 +1478,38 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     });
   }
 
+  _screenCard(d) {
+    const entity = d.entities.screen;
+    if (!entity) return "";
+    const st = this._hass.states[entity];
+    const picture = st?.attributes?.entity_picture;
+    const fresh = st && !["unknown", "unavailable"].includes(st.state);
+    const image = picture && fresh
+      ? `<img class="screen" src="${esc(picture.startsWith("/") ? picture + (picture.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(st.state) : picture)}" alt="${esc(this._t("screen_alt", { name: d.name }))}">`
+      : `<div class="screen-empty">${icon("mdi:monitor-screenshot")}<span>${esc(this._t("screen_empty"))}</span></div>`;
+    if (!d.can_screenshot) {
+      const file = "/tmp/home-assistant-screen.png";
+      const share = `kdeconnect-cli -d ${this._state.self_id} --share ${file}`;
+      const line = (label, cmd) => `<div class="screen-cmd"><div class="screen-cmd-label">${esc(label)}</div><code>${esc(cmd)}</code></div>`;
+      return `<ha-card header="${esc(this._t("screen"))}">
+        <p class="card-text">${esc(this._t("screen_setup", { name: d.name }))}</p>
+        <div class="card-content">${line(this._t("screen_gnome"), `gnome-screenshot -f ${file} && ${share}`)}${line(this._t("screen_plasma"), `spectacle -b -n -f -o ${file} && ${share}`)}</div>
+        <div class="card-actions">${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:cog-outline", data: { id: d.id, name: d.name }, busy: this._busy.has("setup" + d.id) })}</div>
+      </ha-card>`;
+    }
+    return `<ha-card header="${esc(this._t("screen"))}">
+      <div class="card-content">${image}</div>
+      <div class="card-actions">${this._button(this._t("screen_refresh"), "screen-refresh", { iconName: "mdi:refresh", data: { id: d.id }, busy: this._busy.has("screen" + d.id) })}</div>
+    </ha-card>`;
+  }
+
   _remotePad(d) {
     const entity = d.entities.remote;
     const pad = (command, iconName, cls = "") =>
       `<ha-icon-button class="pad-button ${cls}" data-action="remote-send" data-entity="${esc(entity)}" data-command="${command}" label="${esc(this._t("remote_" + command))}">${icon(iconName)}</ha-icon-button>`;
     const extra = (command, iconName) =>
       this._button(this._t("remote_" + command), "remote-send", { appearance: "plain", iconName, data: { entity, command } });
-    return `<ha-card header="${esc(this._t("remote"))}">
+    return `${this._screenCard(d)}<ha-card header="${esc(this._t("remote"))}">
       <div class="remote-pad">
         ${pad("home", "mdi:home-outline")}${pad("up", "mdi:chevron-up")}${pad("back", "mdi:arrow-u-left-top")}
         ${pad("left", "mdi:chevron-left")}${pad("select", "mdi:circle-outline", "ok")}${pad("right", "mdi:chevron-right")}
@@ -2092,6 +2147,11 @@ ha-card { display: block; overflow: hidden; }
 .remote-pad { display: grid; grid-template-columns: repeat(3, 64px); gap: var(--kde-space-3); justify-content: center; padding: var(--kde-space-4); }
 .remote-pad .pad-button { --ha-icon-button-size: 64px; --mdc-icon-button-size: 64px; --mdc-icon-size: 32px; --ha-icon-button-padding-inline: 16px; border-radius: 50%; background: var(--secondary-background-color); color: var(--primary-text-color); }
 .remote-pad .pad-button.ok { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+.screen { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--divider-color); background: #000; }
+.screen-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--kde-space-2); aspect-ratio: 16 / 9; border-radius: 8px; background: var(--secondary-background-color); color: var(--secondary-text-color); text-align: center; padding: var(--kde-space-4); box-sizing: border-box; }
+.screen-cmd { margin-bottom: var(--kde-space-3); }
+.screen-cmd-label { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); margin-bottom: 4px; }
+.screen-cmd code { display: block; padding: var(--kde-space-2) var(--kde-space-3); border-radius: 8px; background: var(--secondary-background-color); font-family: var(--ha-font-family-code, monospace); font-size: 13px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
 .touchpad { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--kde-space-2); height: 200px; margin: 0 var(--kde-space-4) var(--kde-space-3); padding: var(--kde-space-4); box-sizing: border-box; border-radius: 16px; border: 1px dashed var(--divider-color); background: var(--secondary-background-color); color: var(--secondary-text-color); text-align: center; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
 .touchpad ha-icon, .touchpad svg { pointer-events: none; }
 .remote-extra { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--kde-space-2); padding: 0 var(--kde-space-4); }

@@ -7,6 +7,8 @@ import logging
 import socket
 import uuid
 from collections.abc import Callable
+from datetime import datetime
+from pathlib import PurePath
 from typing import Any
 
 from homeassistant.components import network
@@ -36,6 +38,7 @@ from .kdeconnect.protocol import (
     PACKET_TYPE_NOTIFICATION,
     PACKET_TYPE_RUNCOMMAND,
     PACKET_TYPE_RUNCOMMAND_REQUEST,
+    PACKET_TYPE_SHARE_REQUEST,
     PACKET_TYPE_SYSTEMVOLUME,
     PACKET_TYPE_SYSTEMVOLUME_REQUEST,
     pem_to_der,
@@ -73,7 +76,17 @@ OWN_COMMAND_NAMES: dict[str, frozenset[str]] = {
     "ring": frozenset({"ring", "laten rinkelen"}),
     "lock": frozenset({"lock screen", "scherm vergrendelen"}),
     "unlock": frozenset({"unlock screen", "scherm ontgrendelen"}),
+    "screenshot": frozenset({"screenshot", "schermafbeelding"}),
 }
+
+# Images a device may send us (its screen); anything else it shares is ignored.
+IMAGE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+MAX_IMAGE_SIZE = 25 * 1024 * 1024
 
 
 class KdeConnectDevice:
@@ -108,6 +121,10 @@ class KdeConnectDevice:
         self.selected_player: str | None = None
         self.sinks: dict[str, dict[str, Any]] = {}
         self.can_type: bool | None = None
+        # The last image the device shared, shown as its screen.
+        self.screen: bytes | None = None
+        self.screen_type = "image/png"
+        self.screen_time: datetime | None = None
         self._listeners: list[Callable[[], None]] = []
         self._command_listeners: list[Callable[[], None]] = []
 
@@ -212,10 +229,46 @@ class KdeConnectDevice:
             if isinstance(state := body.get("state"), bool):
                 self.can_type = state
                 self._notify()
+        elif packet.type == PACKET_TYPE_SHARE_REQUEST:
+            self._handle_share(packet)
         elif packet.type == PACKET_TYPE_MPRIS:
             self._handle_mpris(body)
         elif packet.type == PACKET_TYPE_SYSTEMVOLUME:
             self._handle_systemvolume(body)
+
+    def _handle_share(self, packet: Packet) -> None:
+        filename = packet.body.get("filename")
+        size, port = packet.payload_size, packet.payload_port
+        if not isinstance(filename, str) or size is None or port is None:
+            return
+        content_type = IMAGE_TYPES.get(PurePath(filename).suffix.lower())
+        if content_type is None or not 0 < size <= MAX_IMAGE_SIZE:
+            _LOGGER.debug("Ignoring %s shared by %s", filename, self.name)
+            return
+        self.entry.async_create_background_task(
+            self.hass,
+            self._async_receive_screen(port, size, content_type),
+            f"{self.name} screen",
+        )
+
+    async def _async_receive_screen(
+        self, port: int, size: int, content_type: str
+    ) -> None:
+        try:
+            data = await self.hub.async_download_payload(self.device_id, port, size)
+        except OSError as err:
+            _LOGGER.warning("Could not receive the screen of %s: %s", self.name, err)
+            return
+        self.screen = data
+        self.screen_type = content_type
+        self.screen_time = dt_util.utcnow()
+        self._notify()
+
+    def take_screenshot(self) -> bool:
+        """Run the device's Screenshot command, which shares its screen with us."""
+        if (key := self.own_command("screenshot")) is None:
+            return False
+        return self.run_command(key)
 
     def _handle_mpris(self, body: dict[str, Any]) -> None:
         if isinstance(names := body.get("playerList"), list):

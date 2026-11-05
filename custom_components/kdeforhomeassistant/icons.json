@@ -33,6 +33,11 @@
       "keyboard": {
         "default": "mdi:keyboard-outline"
       }
+    },
+    "image": {
+      "screen": {
+        "default": "mdi:monitor-screenshot"
+      }
     }
   }
 }

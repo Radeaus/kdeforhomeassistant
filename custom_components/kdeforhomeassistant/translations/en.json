@@ -150,6 +150,11 @@
       "keyboard": {
         "name": "Keyboard"
       }
+    },
+    "image": {
+      "screen": {
+        "name": "Screen"
+      }
     }
   },
   "exceptions": {
