@@ -140,6 +140,11 @@ const STRINGS = {
     screen: "Screen",
     screen_alt: "Screen of {name}",
     screen_refresh: "Refresh",
+    screen_zoom: "Enlarge",
+    viewer_in: "Zoom in",
+    viewer_out: "Zoom out",
+    viewer_fit: "Fit to screen",
+    remote_text_placeholder: "Text to type",
     screen_empty: "No screenshot yet. Select Refresh.",
     screen_desktop: "To see the screen, {name} needs a run command named “Screenshot”. Which desktop does {name} use?",
     screen_desktop_hint: "The same choice as in Help me make buttons.",
@@ -344,6 +349,11 @@ const STRINGS = {
     screen: "Scherm",
     screen_alt: "Scherm van {name}",
     screen_refresh: "Vernieuwen",
+    screen_zoom: "Vergroten",
+    viewer_in: "Inzoomen",
+    viewer_out: "Uitzoomen",
+    viewer_fit: "Passend maken",
+    remote_text_placeholder: "Tekst om te typen",
     screen_empty: "Nog geen schermafbeelding. Kies Vernieuwen.",
     screen_desktop: "Om het scherm te zien, heeft {name} een opdracht nodig met de naam “Schermafbeelding”. Welk bureaublad gebruikt {name}?",
     screen_desktop_hint: "Dezelfde keuze als bij Help mij knoppen maken.",
@@ -627,10 +637,17 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onInput(ev));
-    this.shadowRoot.addEventListener("pointerdown", (ev) => this._padDown(ev));
-    this.shadowRoot.addEventListener("pointermove", (ev) => this._padMove(ev));
-    this.shadowRoot.addEventListener("pointerup", (ev) => this._padUp(ev, true));
-    this.shadowRoot.addEventListener("pointercancel", (ev) => this._padUp(ev, false));
+    this.shadowRoot.addEventListener("pointerdown", (ev) => this._viewerDown(ev) || this._padDown(ev));
+    this.shadowRoot.addEventListener("pointermove", (ev) => this._viewerMove(ev) || this._padMove(ev));
+    this.shadowRoot.addEventListener("pointerup", (ev) => this._viewerUp(ev) || this._padUp(ev, true));
+    this.shadowRoot.addEventListener("pointercancel", (ev) => this._viewerUp(ev) || this._padUp(ev, false));
+    // Escape closes the screenshot viewer, wherever the focus is.
+    window.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && this._viewer && this.isConnected) {
+        this._viewer = null;
+        this._render();
+      }
+    });
     this.shadowRoot.addEventListener("keydown", (ev) => {
       const target = ev.composedPath().find((node) => node.dataset?.enter);
       if (ev.key === "Enter" && target) {
@@ -1233,6 +1250,24 @@ class KdeForHomeAssistantPanel extends HTMLElement {
           this._hass.callService("lock", action, { entity_id: data.entity })
         );
         return;
+      case "viewer-open":
+        this._viewer = { id: data.id, zoom: null, sx: 0, sy: 0 };
+        this._render();
+        return;
+      case "viewer-close":
+        this._viewer = null;
+        this._render();
+        return;
+      case "viewer-in":
+      case "viewer-out": {
+        const area = this.shadowRoot.querySelector(".viewer-area");
+        if (area) this._viewerZoom(this._viewerScale() * (action === "viewer-in" ? 1.5 : 1 / 1.5), area.clientWidth / 2, area.clientHeight / 2);
+        return;
+      }
+      case "viewer-fit":
+        this._viewer.zoom = null;
+        this._applyViewer();
+        return;
       case "screen-desktop":
         this._helper.desktop = data.value || null;
         this._helperChanged(null);
@@ -1493,6 +1528,143 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     });
   }
 
+  // Screenshot viewer: full screen, zoom with buttons, wheel, pinch or a
+  // double tap, and drag to move around.
+
+  _viewerPicture() {
+    const d = this._device(this._viewer?.id);
+    const picture = d && this._hass.states[d.entities?.screen]?.attributes?.entity_picture;
+    if (!picture) return null;
+    const st = this._hass.states[d.entities.screen];
+    return picture.startsWith("/") ? picture + (picture.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(st.state) : picture;
+  }
+
+  _viewerHtml() {
+    const src = this._viewerPicture();
+    if (!src) return "";
+    const btn = (action, iconName, label) => `<ha-icon-button data-action="${action}" label="${esc(label)}">${icon(iconName)}</ha-icon-button>`;
+    return `<div class="viewer" role="dialog" aria-modal="true" aria-label="${esc(this._t("screen"))}">
+      <div class="viewer-bar">${btn("viewer-out", "mdi:magnify-minus-outline", this._t("viewer_out"))}<span class="viewer-zoom"></span>${btn("viewer-in", "mdi:magnify-plus-outline", this._t("viewer_in"))}${btn("viewer-fit", "mdi:fit-to-screen-outline", this._t("viewer_fit"))}<span class="viewer-space"></span>${btn("viewer-close", "mdi:close", this._t("close"))}</div>
+      <div class="viewer-area"><img class="viewer-img" src="${esc(src)}" alt="" draggable="false"></div>
+    </div>`;
+  }
+
+  _viewerFit() {
+    const area = this.shadowRoot.querySelector(".viewer-area");
+    const img = this.shadowRoot.querySelector(".viewer-img");
+    if (!area || !img?.naturalWidth) return 1;
+    return Math.min(area.clientWidth / img.naturalWidth, area.clientHeight / img.naturalHeight);
+  }
+
+  _viewerScale() {
+    return this._viewer?.zoom ?? this._viewerFit();
+  }
+
+  _applyViewer() {
+    const img = this.shadowRoot.querySelector(".viewer-img");
+    const area = this.shadowRoot.querySelector(".viewer-area");
+    if (!img || !area) return;
+    // On the element itself: Chrome only lets a wheel handler cancel scrolling there.
+    area.addEventListener("wheel", (ev) => this._viewerWheel(ev), { passive: false });
+    const apply = () => {
+      const scale = this._viewerScale();
+      img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
+      area.scrollLeft = this._viewer.sx;
+      area.scrollTop = this._viewer.sy;
+      const label = this.shadowRoot.querySelector(".viewer-zoom");
+      if (label) label.textContent = `${Math.round(scale * 100)}%`;
+    };
+    if (img.complete && img.naturalWidth) apply();
+    else img.addEventListener("load", apply, { once: true });
+  }
+
+  // Zoom to a scale, keeping the point (x, y) of the visible area in place.
+  _viewerZoom(scale, x, y) {
+    const area = this.shadowRoot.querySelector(".viewer-area");
+    const img = this.shadowRoot.querySelector(".viewer-img");
+    if (!area || !img?.naturalWidth) return;
+    const fit = this._viewerFit();
+    const old = this._viewerScale();
+    scale = Math.min(Math.max(scale, Math.min(fit, 1)), 8);
+    const px = (area.scrollLeft + x - img.offsetLeft) / old;
+    const py = (area.scrollTop + y - img.offsetTop) / old;
+    this._viewer.zoom = Math.abs(scale - fit) < 0.001 ? null : scale;
+    img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
+    area.scrollLeft = px * scale + img.offsetLeft - x;
+    area.scrollTop = py * scale + img.offsetTop - y;
+    this._viewer.sx = area.scrollLeft;
+    this._viewer.sy = area.scrollTop;
+    const label = this.shadowRoot.querySelector(".viewer-zoom");
+    if (label) label.textContent = `${Math.round(scale * 100)}%`;
+  }
+
+  _viewerPoint(ev) {
+    const rect = this.shadowRoot.querySelector(".viewer-area").getBoundingClientRect();
+    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  }
+
+  _viewerDown(ev) {
+    if (!this._viewer || !ev.composedPath().some((node) => node.classList?.contains("viewer-area"))) return false;
+    ev.preventDefault();
+    ev.target.setPointerCapture?.(ev.pointerId);
+    const g = (this._gesture ??= { pointers: new Map(), lastTap: 0 });
+    g.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    g.moved = 0;
+    g.pinch = null;
+    return true;
+  }
+
+  _viewerMove(ev) {
+    const g = this._gesture;
+    if (!this._viewer || !g?.pointers.has(ev.pointerId)) return false;
+    ev.preventDefault();
+    const area = this.shadowRoot.querySelector(".viewer-area");
+    const prev = g.pointers.get(ev.pointerId);
+    g.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (g.pointers.size >= 2) {
+      const [a, b] = [...g.pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const mid = this._viewerPoint({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 });
+      if (g.pinch) this._viewerZoom(this._viewerScale() * (dist / g.pinch), mid.x, mid.y);
+      g.pinch = dist;
+      g.moved += 100;
+    } else if (area) {
+      area.scrollLeft -= ev.clientX - prev.x;
+      area.scrollTop -= ev.clientY - prev.y;
+      this._viewer.sx = area.scrollLeft;
+      this._viewer.sy = area.scrollTop;
+      g.moved += Math.abs(ev.clientX - prev.x) + Math.abs(ev.clientY - prev.y);
+    }
+    return true;
+  }
+
+  _viewerUp(ev) {
+    const g = this._gesture;
+    if (!g?.pointers.has(ev.pointerId)) return false;
+    g.pointers.delete(ev.pointerId);
+    g.pinch = null;
+    if (ev.type === "pointerup" && g.pointers.size === 0 && g.moved < 8) {
+      const now = Date.now();
+      if (now - g.lastTap < 300) {
+        // Double tap: zoom in to full size there, or back to fit.
+        const { x, y } = this._viewerPoint(ev);
+        const fit = this._viewerFit();
+        this._viewerZoom(this._viewer.zoom ? fit : Math.max(1, fit * 2), x, y);
+        g.lastTap = 0;
+      } else {
+        g.lastTap = now;
+      }
+    }
+    return true;
+  }
+
+  _viewerWheel(ev) {
+    if (!this._viewer || !ev.composedPath().some((node) => node.classList?.contains("viewer-area"))) return;
+    ev.preventDefault();
+    const { x, y } = this._viewerPoint(ev);
+    this._viewerZoom(this._viewerScale() * (ev.deltaY < 0 ? 1.15 : 1 / 1.15), x, y);
+  }
+
   _screenCard(d) {
     const entity = d.entities.screen;
     if (!entity) return "";
@@ -1500,7 +1672,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     const picture = st?.attributes?.entity_picture;
     const fresh = st && !["unknown", "unavailable"].includes(st.state);
     const image = picture && fresh
-      ? `<img class="screen" src="${esc(picture.startsWith("/") ? picture + (picture.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(st.state) : picture)}" alt="${esc(this._t("screen_alt", { name: d.name }))}">`
+      ? `<img class="screen" data-action="viewer-open" data-id="${esc(d.id)}" src="${esc(picture.startsWith("/") ? picture + (picture.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(st.state) : picture)}" alt="${esc(this._t("screen_alt", { name: d.name }))}">`
       : `<div class="screen-empty">${icon("mdi:monitor-screenshot")}<span>${esc(this._t("screen_empty"))}</span></div>`;
     if (!d.can_screenshot) {
       const desktop = this._helper.desktop;
@@ -1526,7 +1698,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     }
     return `<ha-card header="${esc(this._t("screen"))}">
       <div class="card-content">${image}</div>
-      <div class="card-actions">${this._button(this._t("screen_refresh"), "screen-refresh", { iconName: "mdi:refresh", data: { id: d.id }, busy: this._busy.has("screen" + d.id) })}</div>
+      <div class="card-actions">${fresh ? this._button(this._t("screen_zoom"), "viewer-open", { appearance: "plain", iconName: "mdi:magnify-plus-outline", data: { id: d.id } }) : ""}${this._button(this._t("screen_refresh"), "screen-refresh", { iconName: "mdi:refresh", data: { id: d.id }, busy: this._busy.has("screen" + d.id) })}</div>
     </ha-card>`;
   }
 
@@ -1544,7 +1716,8 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       </div>
       <div class="touchpad" data-id="${esc(d.id)}">${icon("mdi:gesture-tap")}<span>${esc(this._t("remote_touchpad"))}</span></div>
       <div class="remote-extra">${extra("click", "mdi:cursor-default-click-outline")}${extra("right_click", "mdi:mouse")}${extra("close", "mdi:window-close")}</div>
-      <div class="card-content type-row">${this._textField({ id: "remote-text", field: "edit.remoteText", enter: "remote-type", data: { entity }, label: this._t("remote_text"), value: this._edit.remoteText ?? "" })}${this._button(this._t("remote_type"), "remote-type", { iconName: "mdi:keyboard-outline", data: { entity } })}</div>
+      <div class="field-label type-label">${esc(this._t("remote_text"))}</div>
+      <div class="card-content type-row">${this._textField({ id: "remote-text", field: "edit.remoteText", enter: "remote-type", data: { entity }, label: "", placeholder: this._t("remote_text_placeholder"), value: this._edit.remoteText ?? "" })}${this._button(this._t("remote_type"), "remote-type", { iconName: "mdi:keyboard-outline", data: { entity } })}</div>
       <p class="hint type-hint">${esc(this._t("remote_text_help", { name: d.name }))}</p>
     </ha-card>${this._screenCard(d)}`;
   }
@@ -1575,6 +1748,12 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     const active = this.shadowRoot.activeElement;
     const focus = active?.id ? { id: active.id } : null;
     const view = this._view();
+    const viewerArea = this.shadowRoot.querySelector(".viewer-area");
+    if (this._viewer && viewerArea) {
+      this._viewer.sx = viewerArea.scrollLeft;
+      this._viewer.sy = viewerArea.scrollTop;
+    }
+    if (view.name !== "device") this._viewer = null;
     let body;
     if (!this._state || !this._ready) body = this._loading();
     else if (!this._state.configured) body = this._message(this._t("not_configured"));
@@ -1582,7 +1761,8 @@ class KdeForHomeAssistantPanel extends HTMLElement {
     else if (view.name === "device") body = this._renderDevice(view.id);
     else if (view.name === "helper") body = this._renderHelper(view.id);
     else body = this._renderOverview();
-    this.shadowRoot.innerHTML = `<style>${STYLES}</style>${body}`;
+    this.shadowRoot.innerHTML = `<style>${STYLES}</style>${body}${this._viewer ? this._viewerHtml() : ""}`;
+    if (this._viewer) this._applyViewer();
     for (const el of this.shadowRoot.querySelectorAll("ha-menu-button")) {
       el.hass = this._hass;
       el.narrow = this._narrow;
@@ -2174,11 +2354,20 @@ ha-card { display: block; overflow: hidden; }
 .remote-pad { display: grid; grid-template-columns: repeat(3, 64px); gap: var(--kde-space-3); justify-content: center; padding: var(--kde-space-4); }
 .remote-pad .pad-button { --ha-icon-button-size: 64px; --mdc-icon-button-size: 64px; --mdc-icon-size: 32px; --ha-icon-button-padding-inline: 16px; border-radius: 50%; background: var(--secondary-background-color); color: var(--primary-text-color); }
 .remote-pad .pad-button.ok { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+.viewer { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; background: #000; }
+.viewer-bar { display: flex; align-items: center; gap: var(--kde-space-1, 4px); padding: var(--kde-space-2); color: #fff; --icon-primary-color: #fff; }
+.viewer-zoom { min-width: 3.5em; text-align: center; font-variant-numeric: tabular-nums; }
+.viewer-space { flex: 1; }
+.viewer-area { flex: 1; display: flex; overflow: auto; touch-action: none; cursor: grab; }
+.viewer-area:active { cursor: grabbing; }
+.viewer-img { display: block; margin: auto; flex: none; max-width: none; user-select: none; -webkit-user-select: none; }
+.screen[data-action] { cursor: zoom-in; }
 .screen { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--divider-color); background: #000; }
 .screen-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--kde-space-2); aspect-ratio: 16 / 9; border-radius: 8px; background: var(--secondary-background-color); color: var(--secondary-text-color); text-align: center; padding: var(--kde-space-4); box-sizing: border-box; }
-.type-row { display: flex; align-items: flex-end; gap: var(--kde-space-2); padding-bottom: 0; }
-.type-row > .text-field { flex: 1; min-width: 0; }
-.type-row > ha-button { flex: none; margin-bottom: 8px; }
+.field-label.type-label { margin: var(--kde-space-2) var(--kde-space-4) 0; }
+.type-row { display: flex; align-items: center; gap: var(--kde-space-2); padding-top: 4px; padding-bottom: 0; }
+.type-row > .text-field { flex: 1; min-width: 0; margin: 0; }
+.type-row > ha-button { flex: none; margin: 0; }
 .type-hint { margin: 4px var(--kde-space-4) var(--kde-space-4); }
 code.screen-cmd { display: block; padding: var(--kde-space-2) var(--kde-space-3); border-radius: 8px; background: var(--secondary-background-color); font-family: var(--ha-font-family-code, monospace); font-size: 13px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
 .touchpad { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--kde-space-2); height: 200px; margin: 0 var(--kde-space-4) var(--kde-space-3); padding: var(--kde-space-4); box-sizing: border-box; border-radius: 16px; border: 1px dashed var(--divider-color); background: var(--secondary-background-color); color: var(--secondary-text-color); text-align: center; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
