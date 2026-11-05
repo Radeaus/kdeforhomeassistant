@@ -22,7 +22,8 @@
     },
     "abort": {
       "single_instance_allowed": "KDE for Home Assistant is already set up. Open **KDE for Home Assistant** in the sidebar to add a device.",
-      "import_failed": "The files of the older integration could not be read. Choose **Start fresh** instead."
+      "import_failed": "The files of the older integration could not be read. Choose **Start fresh** instead.",
+      "legacy_running": "The older KDE Connect integration is still running. Both use the same network ports, so remove it first, restart Home Assistant and try again."
     },
     "error": {
       "legacy_running": "Remove the older KDE Connect integration first, then try again."

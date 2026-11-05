@@ -368,3 +368,47 @@ async def test_no_pair_ping_pong(hass: HomeAssistant) -> None:
     await asyncio.sleep(0.5)
     assert sum(p.type == PACKET_TYPE_PAIR for p in device.packets) == 1
     device.close()
+
+
+async def test_panel_shown_when_ports_busy(hass: HomeAssistant) -> None:
+    """The sidebar page appears and explains why, even when setup fails."""
+    from unittest.mock import AsyncMock, patch
+
+    from custom_components.kdeforhomeassistant.websocket import build_state
+
+    with (
+        patch(
+            "custom_components.kdeforhomeassistant.KdeConnectHub.start",
+            side_effect=OSError("Address in use"),
+        ),
+        patch(
+            "custom_components.kdeforhomeassistant.async_register_panel",
+            new=AsyncMock(),
+        ) as register,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        assert entry.state is ConfigEntryState.SETUP_RETRY
+        assert register.await_count >= 1
+        state = build_state(hass)
+        assert state["loaded"] is False
+        assert "Address in use" in state["reason"]
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_start_fresh_blocked_while_legacy_runs(hass: HomeAssistant) -> None:
+    """Setup stops early while bartv2/kde_connect still holds the ports."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    MockConfigEntry(domain="kde_connect", state=ConfigEntryState.LOADED).add_to_hass(
+        hass
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "legacy_running"

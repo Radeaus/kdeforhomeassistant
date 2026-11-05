@@ -184,6 +184,7 @@ def build_state(hass: HomeAssistant) -> dict[str, Any]:
     return {
         "configured": True,
         "loaded": loaded,
+        "reason": None if loaded else entry.reason,
         "name": entry.options.get(CONF_NAME) or entry.title,
         "default_name": default_name(hass.config.location_name),
         "devices": sorted(devices, key=lambda item: item["name"].lower()),

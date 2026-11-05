@@ -23,7 +23,7 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
@@ -98,6 +98,8 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Offer to take over the pairing of the older integration, if there is one."""
+        if _legacy_running(self.hass):
+            return self.async_abort(reason="legacy_running")
         legacy = self.hass.config.path(LEGACY_CONFIG_DIR, "certificate.pem")
         if await self.hass.async_add_executor_job(os.path.isfile, legacy):
             return self.async_show_menu(
@@ -136,7 +138,7 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         legacy_entries = self.hass.config_entries.async_entries(LEGACY_DOMAIN)
         errors: dict[str, str] = {}
         if user_input is not None:
-            if any(entry.state is ConfigEntryState.LOADED for entry in legacy_entries):
+            if _legacy_running(self.hass):
                 errors["base"] = "legacy_running"
             else:
                 name = filter_device_name(user_input[CONF_NAME]) or DEFAULT_NAME
@@ -177,6 +179,14 @@ class KdeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={"devices": names},
         )
+
+
+def _legacy_running(hass: HomeAssistant) -> bool:
+    """Return whether the older integration is running and holds the ports."""
+    return any(
+        entry.state is ConfigEntryState.LOADED
+        for entry in hass.config_entries.async_entries(LEGACY_DOMAIN)
+    )
 
 
 def _read_legacy(path: str) -> dict[str, Any]:

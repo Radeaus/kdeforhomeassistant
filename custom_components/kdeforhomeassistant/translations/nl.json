@@ -22,7 +22,8 @@
     },
     "abort": {
       "single_instance_allowed": "KDE for Home Assistant is al ingesteld. Open **KDE for Home Assistant** in de zijbalk om een apparaat toe te voegen.",
-      "import_failed": "De bestanden van de oudere integratie konden niet worden gelezen. Kies in plaats daarvan **Opnieuw beginnen**."
+      "import_failed": "De bestanden van de oudere integratie konden niet worden gelezen. Kies in plaats daarvan **Opnieuw beginnen**.",
+      "legacy_running": "De oudere KDE Connect-integratie draait nog. Beide gebruiken dezelfde netwerkpoorten. Verwijder die eerst, herstart Home Assistant en probeer het opnieuw."
     },
     "error": {
       "legacy_running": "Verwijder eerst de oudere KDE Connect-integratie en probeer het daarna opnieuw."

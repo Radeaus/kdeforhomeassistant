@@ -91,6 +91,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -> bool:
     """Start listening for KDE Connect devices."""
+    # Add the panel first, so it is there to explain what is wrong when the
+    # ports cannot be opened.
+    await async_register_panel(hass)
     hub = KdeConnectHub(
         identity_from_entry(entry),
         incoming_capabilities=INCOMING_CAPABILITIES,
@@ -178,7 +181,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -
     hass.async_create_task(announce(), eager_start=True)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    await async_register_panel(hass)
     changed()
     return True
 

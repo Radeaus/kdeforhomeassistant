@@ -1507,7 +1507,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         });
     return `${this._toolbar(this._t("title"))}
       <div class="content"><div class="container">
-        ${state.loaded ? "" : this._alert("warning", esc(this._t("not_loaded")))}
+        ${state.loaded ? "" : this._alert("warning", esc(this._t("not_loaded")) + (state.reason ? `<br>${esc(state.reason)}` : ""))}
         ${this._requests()}${this._notices()}${devices}
         <ha-card header="${esc(this._t("settings"))}">${nameRow}</ha-card>
       </div></div>`;
