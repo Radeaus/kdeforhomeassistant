@@ -37,11 +37,74 @@ Per paired device:
 | `lock` Screen | Lock/unlock the screen, shows lock state |
 | `notify` | Send a notification |
 | `media_player` Media | What plays on the device (Spotify, a browser, …): play/pause, next/previous, seek, choose the player, and set or mute the system volume |
+| `remote` Remote | Keys, text and mouse actions, like the remote in the KDE Connect app. `turn_on` wakes the device (needs a MAC address) |
+| `text` Keyboard | Types whatever you enter on the device |
 | `button` Ring | Find-my-device sound |
 | `button` Wake up | Wake-on-LAN (needs a MAC address) |
 | `button` per run command | Runs the commands configured in KDE Connect on the device |
 
 Home Assistant scripts can be shared with a device and then show up under *Run command* in KDE Connect. The sidebar page lets you manage each device later: run and add commands, share scripts, set the MAC address, or remove it.
+
+## Remote
+
+The remote sends keys and mouse actions the way the KDE Connect app does, so it works with the normal KDE Connect app on the device:
+
+| Device | Works |
+| --- | --- |
+| Linux (KDE Plasma, Plasma Bigscreen, GNOME with GSConnect, X11 desktops) | Keys, text and mouse |
+| Windows, macOS | Keys, text and mouse |
+| Android, Android TV | Clicks, scrolling and `android_back` / `android_home` / `android_recents`; keys only while the KDE Connect keyboard is active |
+
+The first time, the device may ask for permission: on Plasma and GNOME (Wayland) a "remote control" prompt, on macOS the Accessibility permission, on Android the KDE Connect accessibility service.
+
+Use `remote.send_command` with one or more commands:
+
+| Commands | |
+| --- | --- |
+| `up` `down` `left` `right` `select` `back` `home` `close` | The buttons of the remote in the KDE Connect app (`home` is the Super key, `close` is Alt+F4) |
+| `enter` `escape` `tab` `backspace` `delete` `page_up` `page_down` `home_key` `end` `f1` … `f12` `super` | Single keys |
+| `a`, `7`, `?` | Any single character |
+| `ctrl+c`, `alt+f4`, `ctrl+shift+t`, `super+e` | Combinations with `ctrl`, `alt`, `shift` and `super` |
+| `text:Hello` | Types text |
+| `click` `double_click` `right_click` `middle_click` | Mouse buttons |
+| `scroll_up` `scroll_down` `scroll_left` `scroll_right` | Scroll a step; `scroll_down:120` scrolls further |
+| `move:dx,dy` | Moves the pointer, for example `move:50,0` |
+
+A remote on a dashboard, as buttons that call the remote:
+
+```yaml
+type: grid
+columns: 3
+square: false
+cards:
+  - type: button
+    icon: mdi:home
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: home}}
+  - type: button
+    icon: mdi:arrow-up
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: up}}
+  - type: button
+    icon: mdi:arrow-left-top
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: back}}
+  - type: button
+    icon: mdi:arrow-left
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: left}}
+  - type: button
+    icon: mdi:checkbox-blank-circle-outline
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: select}}
+  - type: button
+    icon: mdi:arrow-right
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: right}}
+  - type: button
+    icon: mdi:chevron-double-up
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: scroll_up}}
+  - type: button
+    icon: mdi:arrow-down
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: down}}
+  - type: button
+    icon: mdi:chevron-double-down
+    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: scroll_down}}
+```
 
 ## Tips
 

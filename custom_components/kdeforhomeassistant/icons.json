@@ -23,6 +23,16 @@
       "media": {
         "default": "mdi:play-box-outline"
       }
+    },
+    "remote": {
+      "remote": {
+        "default": "mdi:remote-tv"
+      }
+    },
+    "text": {
+      "keyboard": {
+        "default": "mdi:keyboard-outline"
+      }
     }
   }
 }

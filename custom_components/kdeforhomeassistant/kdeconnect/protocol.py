@@ -31,10 +31,31 @@ PACKET_TYPE_NOTIFICATION = "kdeconnect.notification"
 PACKET_TYPE_FINDMYPHONE_REQUEST = "kdeconnect.findmyphone.request"
 PACKET_TYPE_LOCK = "kdeconnect.lock"
 PACKET_TYPE_LOCK_REQUEST = "kdeconnect.lock.request"
+PACKET_TYPE_MOUSEPAD_REQUEST = "kdeconnect.mousepad.request"
+PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE = "kdeconnect.mousepad.keyboardstate"
 PACKET_TYPE_MPRIS = "kdeconnect.mpris"
 PACKET_TYPE_MPRIS_REQUEST = "kdeconnect.mpris.request"
 PACKET_TYPE_SYSTEMVOLUME = "kdeconnect.systemvolume"
 PACKET_TYPE_SYSTEMVOLUME_REQUEST = "kdeconnect.systemvolume.request"
+
+# "specialKey" codes of the mousepad plugin; the same on every platform.
+SPECIAL_KEYS: dict[str, int] = {
+    "backspace": 1,
+    "tab": 2,
+    "left": 4,
+    "up": 5,
+    "right": 6,
+    "down": 7,
+    "page_up": 8,
+    "page_down": 9,
+    "home_key": 10,
+    "end": 11,
+    "enter": 12,
+    "delete": 13,
+    "escape": 14,
+    "super": 20,
+    **{f"f{number}": 20 + number for number in range(1, 13)},
+}
 
 DEVICE_TYPES = ("desktop", "laptop", "phone", "tablet", "tv")
 

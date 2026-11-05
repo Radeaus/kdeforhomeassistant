@@ -29,6 +29,8 @@ from .kdeconnect.protocol import (
     PACKET_TYPE_FINDMYPHONE_REQUEST,
     PACKET_TYPE_LOCK,
     PACKET_TYPE_LOCK_REQUEST,
+    PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE,
+    PACKET_TYPE_MOUSEPAD_REQUEST,
     PACKET_TYPE_MPRIS,
     PACKET_TYPE_MPRIS_REQUEST,
     PACKET_TYPE_NOTIFICATION,
@@ -105,6 +107,7 @@ class KdeConnectDevice:
         self.players: dict[str, dict[str, Any]] = {}
         self.selected_player: str | None = None
         self.sinks: dict[str, dict[str, Any]] = {}
+        self.can_type: bool | None = None
         self._listeners: list[Callable[[], None]] = []
         self._command_listeners: list[Callable[[], None]] = []
 
@@ -186,6 +189,7 @@ class KdeConnectDevice:
             self.locked = None
             self.players = {}
             self.sinks = {}
+            self.can_type = None
         self._notify()
 
     @callback
@@ -204,6 +208,10 @@ class KdeConnectDevice:
                 self._notify()
             elif body.get("lockResult") is not None:
                 self._send(PACKET_TYPE_LOCK_REQUEST, {"requestLocked": True})
+        elif packet.type == PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE:
+            if isinstance(state := body.get("state"), bool):
+                self.can_type = state
+                self._notify()
         elif packet.type == PACKET_TYPE_MPRIS:
             self._handle_mpris(body)
         elif packet.type == PACKET_TYPE_SYSTEMVOLUME:
@@ -336,6 +344,12 @@ class KdeConnectDevice:
             self._notify()
             return True
         return self._send(PACKET_TYPE_LOCK_REQUEST, {"setLocked": locked})
+
+    # Keyboard and mouse
+
+    def send_input(self, body: dict[str, Any]) -> bool:
+        """Send a key, text or mouse action, like the KDE Connect remote does."""
+        return self._send(PACKET_TYPE_MOUSEPAD_REQUEST, body)
 
     # Media
 

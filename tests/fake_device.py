@@ -32,6 +32,8 @@ CAPABILITIES = [
     "kdeconnect.mpris.request",
     "kdeconnect.systemvolume",
     "kdeconnect.systemvolume.request",
+    "kdeconnect.mousepad.request",
+    "kdeconnect.mousepad.keyboardstate",
 ]
 
 

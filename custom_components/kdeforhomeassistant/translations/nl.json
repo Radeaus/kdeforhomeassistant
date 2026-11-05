@@ -140,6 +140,16 @@
       "media": {
         "name": "Media"
       }
+    },
+    "remote": {
+      "remote": {
+        "name": "Afstandsbediening"
+      }
+    },
+    "text": {
+      "keyboard": {
+        "name": "Toetsenbord"
+      }
     }
   },
   "exceptions": {
@@ -148,6 +158,15 @@
     },
     "port_in_use": {
       "message": "De KDE Connect-netwerkpoorten konden niet worden geopend ({error}). Is de oudere KDE Connect-integratie nog geïnstalleerd, schakel die dan uit of verwijder hem via Instellingen > Reparaties."
+    },
+    "unknown_command": {
+      "message": "Onbekende opdracht \"{command}\". Gebruik een van: {commands}; één teken; een combinatie zoals ctrl+c of alt+f4; text:je tekst; move:dx,dy; of scroll_up:hoeveelheid."
+    },
+    "not_supported": {
+      "message": "{name} kan niet vanuit Home Assistant worden uitgezet."
+    },
+    "no_wake": {
+      "message": "{name} heeft geen MAC-adres, dus Home Assistant kan het niet aanzetten. Voeg er een toe op de pagina KDE for Home Assistant."
     }
   },
   "issues": {

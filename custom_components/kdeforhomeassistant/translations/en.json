@@ -140,6 +140,16 @@
       "media": {
         "name": "Media"
       }
+    },
+    "remote": {
+      "remote": {
+        "name": "Remote"
+      }
+    },
+    "text": {
+      "keyboard": {
+        "name": "Keyboard"
+      }
     }
   },
   "exceptions": {
@@ -148,6 +158,15 @@
     },
     "port_in_use": {
       "message": "Could not open the KDE Connect network ports ({error}). If the older KDE Connect integration is still installed, disable or remove it under Settings > Repairs."
+    },
+    "unknown_command": {
+      "message": "Unknown command \"{command}\". Use one of: {commands}; a single character; a combination like ctrl+c or alt+f4; text:your text; move:dx,dy; or scroll_up:amount."
+    },
+    "not_supported": {
+      "message": "{name} cannot be turned off from Home Assistant."
+    },
+    "no_wake": {
+      "message": "{name} has no MAC address, so Home Assistant cannot wake it up. Add one on the KDE for Home Assistant page."
     }
   },
   "issues": {

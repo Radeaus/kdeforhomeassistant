@@ -69,6 +69,8 @@ PLATFORMS = [
     Platform.LOCK,
     Platform.MEDIA_PLAYER,
     Platform.NOTIFY,
+    Platform.REMOTE,
+    Platform.TEXT,
 ]
 
 
