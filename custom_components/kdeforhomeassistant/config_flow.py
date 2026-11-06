@@ -19,7 +19,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     ConfigSubentryData,
     ConfigSubentryFlow,
-    OptionsFlowWithReload,
+    OptionsFlow,
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME
@@ -266,7 +266,7 @@ def _normalize_certificate(value: Any) -> str:
     raise ValueError("unknown certificate format")
 
 
-class KdeConnectOptionsFlow(OptionsFlowWithReload):
+class KdeConnectOptionsFlow(OptionsFlow):
     """Change how Home Assistant shows up on other devices."""
 
     async def async_step_init(
@@ -328,7 +328,7 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Look for devices on the network."""
         if (hub := self._hub()) is None:
-            return self.async_abort(reason="not_loaded")
+            return self._stopped()
         if self._stop_discovery is None:
             self._stop_discovery = hub.start_discovery()
         if self._task is None:
@@ -416,7 +416,7 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
         """Wait until the device has connected to Home Assistant."""
         hub = self._hub()
         if hub is None:
-            return self.async_abort(reason="not_loaded")
+            return self._stopped()
         if self._task is None:
             self._task = self.hass.async_create_task(self._async_connect(hub))
         if not self._task.done():
@@ -446,6 +446,23 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
             await asyncio.sleep(1)
         raise TimeoutError
 
+    def _stopped(self) -> SubentryFlowResult:
+        """End the flow because the integration stopped.
+
+        A progress step may not abort, so it first finishes the progress.
+        """
+        if self._task is None:
+            return self.async_abort(reason="not_loaded")
+        self._task.cancel()
+        self._task = None
+        return self.async_show_progress_done(next_step_id="not_loaded")
+
+    async def async_step_not_loaded(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """The integration stopped while the flow was waiting."""
+        return self.async_abort(reason="not_loaded")
+
     async def async_step_not_found(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
@@ -458,7 +475,7 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
         """Ask the device to pair and wait for the user to accept there."""
         hub = self._hub()
         if hub is None or self._device_id is None:
-            return self.async_abort(reason="not_loaded")
+            return self._stopped()
         if self._task is None:
             try:
                 self._pairing = hub.start_pairing(self._device_id)
