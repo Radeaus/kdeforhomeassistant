@@ -5,3 +5,4 @@ __pycache__/
 kde_connect_runcommand/
 .ruff_cache/
 _site/
+.coverage

@@ -16,9 +16,15 @@ A Home Assistant integration that speaks the [KDE Connect](https://kdeconnect.kd
 
 You need KDE Connect 23.08 or newer on each computer or phone, on the same network as Home Assistant (UDP 1716 and TCP 1716–1764 open between them).
 
-1. **Install the integration.** In HACS, open the menu (⋮) > **Custom repositories**, add `https://github.com/Radeaus/kdeforhomeassistant` with type *Integration*, then search for **KDE for Home Assistant** and download it.
-   Without HACS: copy `custom_components/kdeforhomeassistant` into your `custom_components` folder.
-2. **Restart Home Assistant.**
+1. **Install the integration.** Search for **KDE for Home Assistant** in the Marketplace and download it.
+<!-- ha-marketplace:exclude-start -->
+   Or open it in your Home Assistant directly:
+
+   [![Open in the Marketplace of your Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Radeaus&repository=kdeforhomeassistant&category=integration)
+
+   Without the Marketplace: copy `custom_components/kdeforhomeassistant` into your `custom_components` folder.
+<!-- ha-marketplace:exclude-end -->
+2. **Restart Home Assistant** if it asks for it.
 3. **Add the integration.** Go to **Settings > Devices & services > Add integration** and choose **KDE for Home Assistant**. Home Assistant now shows up on your network as "*your home name* - Home Assistant".
 4. **Add a device.** Open **KDE for Home Assistant** in the sidebar and select **Add device**. The wizard walks you through it: name Home Assistant, open KDE Connect on the device, choose the device, accept the pairing request, then pick buttons, scripts and Wake-on-LAN.
 5. **Repeat step 4** for every other computer or phone.
@@ -26,6 +32,35 @@ You need KDE Connect 23.08 or newer on each computer or phone, on the same netwo
 Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Both use the same network ports, so only one can run. Step 3 asks whether to **disable** or **remove** the older integration, and then offers to take over its pairings, so your devices stay paired.
 
 You can also select **Pair** in KDE Connect on the device. Home Assistant shows the request in the sidebar and as a notification; accept it within 30 seconds.
+
+## Settings
+
+When you add the integration:
+
+| Field | |
+| --- | --- |
+| Take over existing pairings / Start fresh | Only shown when the older KDE Connect integration was installed. *Take over* keeps its devices paired |
+| Name | Only when you take over pairings: the name your devices show for Home Assistant. Otherwise Home Assistant uses "*your home name* - Home Assistant" |
+
+Under **Configure** on the integration (or *Settings* on the sidebar page):
+
+| Option | |
+| --- | --- |
+| Name | The name your devices show for Home Assistant |
+
+Per device, when you pair it (**Add device** on the sidebar page, or **Pair device** on the integration):
+
+| Field | |
+| --- | --- |
+| Device | A KDE Connect device found on your network |
+| Host | Only when the device is not found: its IP address or hostname |
+
+Per device afterwards (**Change device settings**, or the device on the sidebar page):
+
+| Field | |
+| --- | --- |
+| MAC address | Needed for Wake-on-LAN. Leave empty to hide the *Wake up* button |
+| Scripts the device can run | These scripts show up under *Run command* in KDE Connect on the device |
 
 ## Entities
 
@@ -45,6 +80,22 @@ Per paired device:
 | `button` per run command | Runs the commands configured in KDE Connect on the device |
 
 Home Assistant scripts can be shared with a device and then show up under *Run command* in KDE Connect. The sidebar page lets you manage each device later: run and add commands, share scripts, set the MAC address, or remove it.
+
+## Actions
+
+The integration adds no actions of its own. Use the standard ones on its entities:
+
+| Action | |
+| --- | --- |
+| `notify.send_message` | Shows a notification on the device |
+| `text.set_value` | Types the text on the device |
+| `remote.send_command` | Sends keys, text and mouse actions (see [Remote](#remote)) |
+| `remote.turn_on` | Wakes the device with Wake-on-LAN |
+| `lock.lock` / `lock.unlock` | Locks or unlocks the screen |
+| `button.press` | Rings the device, wakes it, or runs a run command |
+| `media_player.*` | Play/pause, next/previous, seek, volume, mute and choosing the player |
+
+An action on a device that is not connected fails with "*device* is not connected to Home Assistant".
 
 ## Remote
 
@@ -152,6 +203,11 @@ sequence:
     target:
       entity_id: lock.my_pc_screen
 ```
+
+## Removal
+
+- **One device:** on the sidebar page, open the device and select **Remove**. This also removes the pairing on the device. Deleting it under **Settings > Devices & services > KDE for Home Assistant** removes it from Home Assistant only; select *Unpair* in KDE Connect on the device as well.
+- **The whole integration:** go to **Settings > Devices & services > KDE for Home Assistant**, open the menu (⋮) and select **Delete**. Then remove it in the Marketplace and restart Home Assistant. On your devices, Home Assistant stays in the KDE Connect list until you select *Unpair* there.
 
 ## Credits
 

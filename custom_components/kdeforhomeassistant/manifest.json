@@ -7,6 +7,11 @@
     "persistent_notification",
     "repairs"
   ],
+  "categories": [
+    "computers_network",
+    "messaging_notifications.push_notifications",
+    "presence_location.phones_companion_apps"
+  ],
   "codeowners": [
     "@Radeaus"
   ],

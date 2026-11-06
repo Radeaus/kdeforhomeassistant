@@ -127,6 +127,8 @@ class KdeConnectDevice:
         self.screen_time: datetime | None = None
         self._listeners: list[Callable[[], None]] = []
         self._command_listeners: list[Callable[[], None]] = []
+        # Log a lost connection once, and once when it comes back.
+        self._logged_unavailable = False
 
     @property
     def connected(self) -> bool:
@@ -177,6 +179,12 @@ class KdeConnectDevice:
 
     @callback
     def _handle_connection(self, connected: bool) -> None:
+        if connected and self._logged_unavailable:
+            _LOGGER.info("%s is connected again", self.name)
+            self._logged_unavailable = False
+        elif not connected and not self._logged_unavailable:
+            _LOGGER.info("%s is no longer connected", self.name)
+            self._logged_unavailable = True
         if connected:
             ir.async_delete_issue(self.hass, DOMAIN, f"unpaired_{self.device_id}")
             info = self.hub.connected_info(self.device_id)

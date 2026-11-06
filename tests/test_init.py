@@ -79,7 +79,7 @@ async def _pair(hass: HomeAssistant, entry, device: FakeDevice):
     return result
 
 
-async def test_pair_and_control(hass: HomeAssistant) -> None:
+async def test_pair_and_control(hass: HomeAssistant, caplog) -> None:
     """Pair a protocol 7 device and use lock, notify and run command buttons."""
     assert await async_setup_component(
         hass, "script", {"script": {"hello": {"sequence": []}}}
@@ -177,6 +177,14 @@ async def test_pair_and_control(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     assert hass.states.get("binary_sensor.fake_pc_connected").state == "off"
     assert hass.states.get("lock.fake_pc_screen").state == "unavailable"
+    # A lost connection is logged once, and once when it comes back.
+    assert caplog.text.count("Fake PC is no longer connected") == 1
+    assert "Fake PC is connected again" not in caplog.text
+    await device.connect(hub.tcp_port)
+    await device.wait_for(PACKET_TYPE_RUNCOMMAND)
+    await asyncio.sleep(0.1)
+    await hass.async_block_till_done()
+    assert caplog.text.count("Fake PC is connected again") == 1
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
