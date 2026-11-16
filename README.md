@@ -182,6 +182,8 @@ Phones and computers can share their notifications with Home Assistant directly,
 2. On the sidebar page, open the device and turn on **Share notifications** under **Notifications**. Sharing is off until you do.
 3. Each app shows up under **Apps** after its first notification. Turn apps on or off per device. Get Telegram on both your phone and your computer? Keep it on for one device and turn it off for the other, so it only comes in once. **Share apps not seen before** chooses what happens with new apps.
 
+For Linux desktops, [KDE Connect Rich Notifications](https://github.com/fixtse/kdeconnect-rich-notifications) is an optional third-party sender that forwards chat avatars, website icons and screenshot previews. Follow its [installation guide](https://github.com/fixtse/kdeconnect-rich-notifications#add-the-plugin-to-kde-connect), enable **Rich notifications** for Home Assistant, and disable the stock **Send notifications** plugin for that connection to avoid duplicates.
+
 Silent notifications are skipped unless you turn on **Include silent notifications**; a phone sends its current notifications again as silent ones when it connects, so this keeps old ones from showing up again.
 
 Conversation notifications include the message history supplied by the sender, grouped under the chat or group title with sender changes labeled. This matches the desktop KDE Connect receiver; notifications that supply no history keep their original title and text.
