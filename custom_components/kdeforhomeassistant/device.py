@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import socket
@@ -10,6 +11,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import PurePath
 from typing import Any
+from urllib.parse import urlsplit
 
 from homeassistant.components import network
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
@@ -102,6 +104,8 @@ IMAGE_TYPES = {
     ".webp": "image/webp",
 }
 MAX_IMAGE_SIZE = 25 * 1024 * 1024
+MAX_ARTWORK_SIZE = 5 * 1024 * 1024
+MAX_ARTWORK_CACHE = 16
 
 
 class KdeConnectDevice:
@@ -135,6 +139,8 @@ class KdeConnectDevice:
         self.remote_commands: dict[str, dict[str, str]] = {}
         self.locked: bool | None = None
         self.players: dict[str, dict[str, Any]] = {}
+        self.media_artwork: dict[str, tuple[str, bytes, str, str]] = {}
+        self._requested_artwork: dict[str, tuple[str, str, str, str]] = {}
         self.selected_player: str | None = None
         self.sinks: dict[str, dict[str, Any]] = {}
         self.can_type: bool | None = None
@@ -243,6 +249,8 @@ class KdeConnectDevice:
         else:
             self.locked = None
             self.players = {}
+            self.media_artwork.clear()
+            self._requested_artwork.clear()
             self.sinks = {}
             self.can_type = None
         self._notify()
@@ -270,7 +278,7 @@ class KdeConnectDevice:
         elif packet.type == PACKET_TYPE_SHARE_REQUEST:
             self._handle_share(packet)
         elif packet.type == PACKET_TYPE_MPRIS:
-            self._handle_mpris(body)
+            self._handle_mpris(packet)
         elif packet.type == PACKET_TYPE_SYSTEMVOLUME:
             self._handle_systemvolume(body)
         elif packet.type == PACKET_TYPE_NOTIFICATION:
@@ -407,10 +415,24 @@ class KdeConnectDevice:
             return False
         return self.run_command(key)
 
-    def _handle_mpris(self, body: dict[str, Any]) -> None:
+    def _handle_mpris(self, packet: Packet) -> None:
+        body = packet.body
+        if body.get("transferringAlbumArt") is True:
+            self._handle_artwork(packet)
+            return
         if isinstance(names := body.get("playerList"), list):
             names = [name for name in names if isinstance(name, str)]
             self.players = {name: self.players.get(name, {}) for name in names}
+            self.media_artwork = {
+                name: art
+                for name, art in self.media_artwork.items()
+                if name in self.players
+            }
+            self._requested_artwork = {
+                name: request
+                for name, request in self._requested_artwork.items()
+                if name in self.players
+            }
             for name in names:
                 self._send(
                     PACKET_TYPE_MPRIS_REQUEST,
@@ -421,8 +443,78 @@ class KdeConnectDevice:
             player.update({key: body[key] for key in PLAYER_FIELDS if key in body})
             if "pos" in body:
                 player["posUpdatedAt"] = dt_util.utcnow()
+            if "albumArtUrl" in body:
+                url = body["albumArtUrl"]
+                if name in self.media_artwork and self.media_artwork[name][0] != url:
+                    self.media_artwork.pop(name)
+                if isinstance(url, str) and url.startswith("file://"):
+                    request = (
+                        url,
+                        str(player.get("title", "")),
+                        str(player.get("artist", "")),
+                        str(player.get("album", "")),
+                    )
+                    if self._requested_artwork.get(name) != request:
+                        self._requested_artwork[name] = request
+                        self._send(
+                            PACKET_TYPE_MPRIS_REQUEST,
+                            {"player": name, "albumArtUrl": url},
+                        )
+                else:
+                    self._requested_artwork.pop(name, None)
         else:
             return
+        self._notify()
+
+    def _handle_artwork(self, packet: Packet) -> None:
+        name, url = packet.body.get("player"), packet.body.get("albumArtUrl")
+        if not isinstance(name, str) or not isinstance(url, str):
+            return
+        request = self._requested_artwork.get(name)
+        if (
+            not request
+            or request[0] != url
+            or self.players.get(name, {}).get("albumArtUrl") != url
+        ):
+            return
+        size, port = packet.payload_size, packet.payload_port
+        if size is None or port is None or not 0 < size <= MAX_ARTWORK_SIZE:
+            return
+        self.entry.async_create_background_task(
+            self.hass,
+            self._async_receive_artwork(name, url, port, size, request),
+            f"{self.name} media artwork",
+        )
+
+    async def _async_receive_artwork(
+        self,
+        name: str,
+        url: str,
+        port: int,
+        size: int,
+        request: tuple[str, str, str, str],
+    ) -> None:
+        try:
+            data = await self.hub.async_download_payload(self.device_id, port, size)
+        except (OSError, TimeoutError) as err:
+            _LOGGER.debug("Could not receive artwork from %s: %s", self.name, err)
+            return
+        if (
+            self.players.get(name, {}).get("albumArtUrl") != url
+            or self._requested_artwork.get(name) != request
+        ):
+            return
+        content_type = IMAGE_TYPES.get(PurePath(urlsplit(url).path).suffix.lower())
+        if content_type is None:
+            return
+        self.media_artwork[name] = (
+            url,
+            data,
+            content_type,
+            hashlib.sha256(data).hexdigest()[:16],
+        )
+        while len(self.media_artwork) > MAX_ARTWORK_CACHE:
+            self.media_artwork.pop(next(iter(self.media_artwork)))
         self._notify()
 
     def _handle_systemvolume(self, body: dict[str, Any]) -> None:
