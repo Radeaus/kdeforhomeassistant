@@ -155,6 +155,20 @@
       "screen": {
         "name": "Screen"
       }
+    },
+    "event": {
+      "notification": {
+        "name": "Notification",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "added": "Added",
+              "updated": "Updated",
+              "removed": "Removed"
+            }
+          }
+        }
+      }
     }
   },
   "exceptions": {

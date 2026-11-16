@@ -101,7 +101,7 @@ async def test_without_entry(hass: HomeAssistant, hass_ws_client) -> None:
 
     msg = await _call(client, {"type": f"{DOMAIN}/set_name", "name": "X"})
     assert msg["error"]["code"] == "not_loaded"
-    for command in ("update_device", "remove_device"):
+    for command in ("update_device", "remove_device", "update_notifications"):
         msg = await _call(
             client, {"type": f"{DOMAIN}/{command}", "subentry_id": "nope"}
         )
@@ -131,6 +131,7 @@ async def test_not_loaded(hass: HomeAssistant, hass_ws_client) -> None:
     assert commands["hide"]["entity_id"] is None
     assert commands["shown"]["hidden"] is False
     assert commands["shown"]["entity_id"]
+    assert state["devices"][0]["notifications"] is None
     assert state["discovered"] == []
 
     client = await hass_ws_client(hass)
@@ -146,6 +147,15 @@ async def test_not_loaded(hass: HomeAssistant, hass_ws_client) -> None:
             client, {"type": f"{DOMAIN}/{command}", "subentry_id": "sub_desk"}
         )
         assert msg["error"]["code"] == "not_connected"
+    msg = await _call(
+        client,
+        {
+            "type": f"{DOMAIN}/update_notifications",
+            "subentry_id": "sub_desk",
+            "enabled": True,
+        },
+    )
+    assert msg["error"]["code"] == "not_loaded"
     # Declining without a hub does nothing, but does not fail.
     msg = await _call(client, {"type": f"{DOMAIN}/decline", "device_id": "desk"})
     assert msg["success"]

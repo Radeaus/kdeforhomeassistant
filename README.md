@@ -71,6 +71,7 @@ Per paired device:
 | `binary_sensor` Connected | Device is connected |
 | `lock` Screen | Lock/unlock the screen, shows lock state |
 | `notify` | Send a notification |
+| `event` Notification | A shared notification was added, updated or removed; see [Notifications from devices](#notifications-from-devices) |
 | `media_player` Media | What plays on the device (Spotify, a browser, …): play/pause, next/previous, seek, choose the player, and set or mute the system volume |
 | `remote` Remote | Keys, text and mouse actions, like the remote in the KDE Connect app. `turn_on` wakes the device (needs a MAC address) |
 | `text` Keyboard | Types whatever you enter on the device |
@@ -172,6 +173,47 @@ Home Assistant can show what is on a computer's screen, as a screenshot you refr
 2. Open the device's **Remote** on the sidebar page and select **Refresh**, or press the *Screenshot* button entity. The picture shows up on the page and in the `image` entity.
 
 Only pictures (PNG, JPEG, WebP, up to 25 MB) are kept, and only the latest one, in memory.
+
+## Notifications from devices
+
+Phones and computers can share their notifications with Home Assistant directly, through KDE Connect. Nothing extra has to run on the computer, and no MQTT is needed.
+
+1. In KDE Connect on the device, turn on notification sync for Home Assistant (on Android: open Home Assistant in KDE Connect, then *Plugin settings* > *Notification sync*, and allow notification access; on Linux, enable **Send notifications** for Home Assistant).
+2. On the sidebar page, open the device and turn on **Share notifications** under **Notifications**. Sharing is off until you do.
+3. Each app shows up under **Apps** after its first notification. Turn apps on or off per device. Get Telegram on both your phone and your computer? Keep it on for one device and turn it off for the other, so it only comes in once. **Share apps not seen before** chooses what happens with new apps.
+
+Silent notifications are skipped unless you turn on **Include silent notifications**; a phone sends its current notifications again as silent ones when it connects, so this keeps old ones from showing up again.
+
+Conversation notifications include the message history supplied by the sender, grouped under the chat or group title with sender changes labeled. This matches the desktop KDE Connect receiver; notifications that supply no history keep their original title and text.
+
+Every shared notification fires a `kdeforhomeassistant_notification` event and updates the device's `event` Notification entity:
+
+| Field | |
+| --- | --- |
+| `action` | `added`, `updated` or `removed` (removed on the device) |
+| `device_id` / `device_name` | The Home Assistant device it came from |
+| `id` | The notification's id on the device |
+| `app`, `title`, `text`, `ticker` | Its content (`removed` only has `app`) |
+| `silent` | Whether the device posted it silently |
+| `icon_url` | The notification image (such as a chat avatar, screenshot or app icon) as PNG, when the device sent one. The URL has a random token and works without login, so a display such as an ESPHome screen can download it. Only the last 64 icons are kept, in memory |
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: kdeforhomeassistant_notification
+    event_data:
+      action: added
+      app: Telegram
+actions:
+  - action: notify.mobile_app_watch
+    data:
+      title: "{{ trigger.event.data.title }}"
+      message: "{{ trigger.event.data.text }}"
+```
+
+[![Import the blueprint into Home Assistant](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FRadeaus%2Fkdeforhomeassistant%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fnotifications_on_esphome_display.yaml)
+
+The blueprint [notifications_on_esphome_display.yaml](blueprints/automation/notifications_on_esphome_display.yaml) shows them on an ESPHome display with a `show_message` action, like the OpenNextion knob, and clears them when they are removed on the device.
 
 ## Tips
 

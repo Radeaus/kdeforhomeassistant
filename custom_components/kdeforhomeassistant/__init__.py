@@ -43,6 +43,7 @@ from .device import KdeConnectDevice
 from .kdeconnect import Identity, KdeConnectHub
 from .kdeconnect.protocol import UDP_PORT
 from .legacy import async_check_legacy_issue
+from .notifications import NotificationStore
 from .panel import async_register_panel, async_remove_panel
 from .websocket import async_register_websocket_commands
 
@@ -66,6 +67,7 @@ PAIR_MESSAGES = {
 PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.EVENT,
     Platform.IMAGE,
     Platform.LOCK,
     Platform.MEDIA_PLAYER,
@@ -81,6 +83,7 @@ class KdeConnectData:
 
     hub: KdeConnectHub
     devices: dict[str, KdeConnectDevice]
+    notifications: NotificationStore
 
 
 type KdeConnectConfigEntry = ConfigEntry[KdeConnectData]
@@ -123,8 +126,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -
             translation_placeholders={"error": str(err)},
         ) from err
 
+    notifications = NotificationStore(hass)
+    await notifications.async_load()
     devices = {
-        subentry.subentry_id: KdeConnectDevice(hass, entry, subentry, hub)
+        subentry.subentry_id: KdeConnectDevice(
+            hass, entry, subentry, hub, notifications
+        )
         for subentry in entry.subentries.values()
         if subentry.subentry_type == SUBENTRY_TYPE_DEVICE
     }
@@ -171,7 +178,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -
     hub.on_pair_request = pair_request
     entry.async_on_unload(hub.add_discovery_listener(changed))
 
-    entry.runtime_data = KdeConnectData(hub=hub, devices=devices)
+    entry.runtime_data = KdeConnectData(
+        hub=hub, devices=devices, notifications=notifications
+    )
     for device in devices.values():
         entry.async_on_unload(device.async_start())
         entry.async_on_unload(device.async_add_listener(changed))
