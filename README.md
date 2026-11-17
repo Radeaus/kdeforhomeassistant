@@ -186,6 +186,8 @@ For Linux desktops, [KDE Connect Rich Notifications](https://github.com/fixtse/k
 
 Silent notifications are skipped unless you turn on **Include silent notifications**; a phone sends its current notifications again as silent ones when it connects, so this keeps old ones from showing up again.
 
+Desktop chat notifications (including Telegram, Signal, Discord and WhatsApp) are joined by device, application and sender/chat title. The displayed title identifies the sender/chat on desktop clients. New messages update the same notification and append to its text; different senders and apps stay separate. Duplicate updates to the same source notification are not appended twice. The recent history is held only in memory, bounded to 20 messages and 768 characters, and starts fresh after five minutes without activity. The event uses a stable chat `id` and includes `source_id` for the original device notification. Removing an older member does not dismiss the group while newer members remain. Other desktop apps and phone notifications retain their normal behavior.
+
 Conversation notifications include the message history supplied by the sender, grouped under the chat or group title with sender changes labeled. This matches the desktop KDE Connect receiver; notifications that supply no history keep their original title and text.
 
 Every shared notification fires a `kdeforhomeassistant_notification` event and updates the device's `event` Notification entity:
@@ -194,7 +196,8 @@ Every shared notification fires a `kdeforhomeassistant_notification` event and u
 | --- | --- |
 | `action` | `added`, `updated` or `removed` (removed on the device) |
 | `device_id` / `device_name` | The Home Assistant device it came from |
-| `id` | The notification's id on the device |
+| `id` | Stable chat id for grouped desktop messages; otherwise the device notification id |
+| `source_id` | Original device notification id when a desktop chat is grouped |
 | `app`, `title`, `text`, `ticker` | Its content (`removed` only has `app`) |
 | `silent` | Whether the device posted it silently |
 | `icon_url` | The notification image (such as a chat avatar, screenshot or app icon) as PNG, when the device sent one. The URL has a random token and works without login, so a display such as an ESPHome screen can download it. Only the last 64 icons are kept, in memory |
