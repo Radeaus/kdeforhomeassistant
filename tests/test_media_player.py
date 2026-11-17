@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.kdeforhomeassistant.const import DOMAIN
 from custom_components.kdeforhomeassistant.kdeconnect.protocol import Packet
@@ -199,6 +202,33 @@ async def test_local_artwork_payload_and_track_change(
     )
     await _settle(hass)
     assert hass.states.get(ENTITY).attributes["entity_picture"] != picture
+    picture = hass.states.get(ENTITY).attributes["entity_picture"]
+    blue = image.getvalue()
+    # A player that has not yet rewritten the reused file returns the old image;
+    # it is requested again until the new image arrives.
+    peer.players["Browser"]["title"] = "Third"
+    peer.packets.clear()
+    peer.send(
+        Packet("kdeconnect.mpris", {"player": "Browser", **peer.players["Browser"]})
+    )
+    await peer.wait_for("kdeconnect.mpris.request", player="Browser", albumArtUrl=url)
+    art_packet = Packet(
+        "kdeconnect.mpris",
+        {"player": "Browser", "transferringAlbumArt": True, "albumArtUrl": url},
+    )
+    await peer._offer(art_packet, blue)
+    await _settle(hass)
+    assert hass.states.get(ENTITY).attributes["entity_picture"] == picture
+    peer.packets.clear()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3))
+    await peer.wait_for("kdeconnect.mpris.request", player="Browser", albumArtUrl=url)
+    image = BytesIO()
+    Image.new("RGB", (16, 16), "green").save(image, format="PNG")
+    await peer._offer(art_packet, image.getvalue())
+    await _settle(hass)
+    assert hass.states.get(ENTITY).attributes["entity_picture"] != picture
+    response = await client.get(hass.states.get(ENTITY).attributes["entity_picture"])
+    assert await response.read() == image.getvalue()
     # Closing the player also releases its cached image.
     peer.send(Packet("kdeconnect.mpris", {"playerList": []}))
     await _settle(hass)

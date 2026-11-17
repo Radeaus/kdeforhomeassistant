@@ -19,6 +19,7 @@ from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.util import dt as dt_util
 
@@ -106,6 +107,9 @@ IMAGE_TYPES = {
 MAX_IMAGE_SIZE = 25 * 1024 * 1024
 MAX_ARTWORK_SIZE = 5 * 1024 * 1024
 MAX_ARTWORK_CACHE = 16
+# Players may announce a new track before rewriting a reused artwork file.
+ARTWORK_RETRY_DELAY = 2.0
+ARTWORK_RETRIES = 3
 
 
 class KdeConnectDevice:
@@ -141,6 +145,8 @@ class KdeConnectDevice:
         self.players: dict[str, dict[str, Any]] = {}
         self.media_artwork: dict[str, tuple[str, bytes, str, str]] = {}
         self._requested_artwork: dict[str, tuple[str, str, str, str]] = {}
+        self._artwork_retries: dict[str, tuple[tuple[str, str, str, str], int]] = {}
+        self._artwork_retry_unsubs: dict[str, Callable[[], None]] = {}
         self.selected_player: str | None = None
         self.sinks: dict[str, dict[str, Any]] = {}
         self.can_type: bool | None = None
@@ -183,6 +189,7 @@ class KdeConnectDevice:
         def stop() -> None:
             for unsub in unsubs:
                 unsub()
+            self._cancel_artwork_retries()
 
         return stop
 
@@ -251,6 +258,7 @@ class KdeConnectDevice:
             self.players = {}
             self.media_artwork.clear()
             self._requested_artwork.clear()
+            self._cancel_artwork_retries()
             self.sinks = {}
             self.can_type = None
         self._notify()
@@ -507,6 +515,11 @@ class KdeConnectDevice:
         content_type = IMAGE_TYPES.get(PurePath(urlsplit(url).path).suffix.lower())
         if content_type is None:
             return
+        previous = self.media_artwork.get(name)
+        if previous and previous[0] == url and previous[1] == data:
+            self._schedule_artwork_retry(name, url, request)
+            return
+        self._artwork_retries.pop(name, None)
         self.media_artwork[name] = (
             url,
             data,
@@ -516,6 +529,40 @@ class KdeConnectDevice:
         while len(self.media_artwork) > MAX_ARTWORK_CACHE:
             self.media_artwork.pop(next(iter(self.media_artwork)))
         self._notify()
+
+    def _schedule_artwork_retry(
+        self, name: str, url: str, request: tuple[str, str, str, str]
+    ) -> None:
+        """Ask again for a reused artwork file that still holds the old image."""
+        previous_request, count = self._artwork_retries.get(name, (request, 0))
+        if previous_request != request:
+            count = 0
+        if count >= ARTWORK_RETRIES:
+            return
+        self._artwork_retries[name] = (request, count + 1)
+        if unsub := self._artwork_retry_unsubs.pop(name, None):
+            unsub()
+
+        @callback
+        def _retry(_now: datetime) -> None:
+            self._artwork_retry_unsubs.pop(name, None)
+            if (
+                self._requested_artwork.get(name) == request
+                and self.players.get(name, {}).get("albumArtUrl") == url
+            ):
+                self._send(
+                    PACKET_TYPE_MPRIS_REQUEST, {"player": name, "albumArtUrl": url}
+                )
+
+        self._artwork_retry_unsubs[name] = async_call_later(
+            self.hass, ARTWORK_RETRY_DELAY, _retry
+        )
+
+    def _cancel_artwork_retries(self) -> None:
+        for unsub in self._artwork_retry_unsubs.values():
+            unsub()
+        self._artwork_retry_unsubs.clear()
+        self._artwork_retries.clear()
 
     def _handle_systemvolume(self, body: dict[str, Any]) -> None:
         if isinstance(sink_list := body.get("sinkList"), list):
