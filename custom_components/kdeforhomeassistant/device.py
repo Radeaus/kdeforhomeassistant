@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -470,9 +472,33 @@ class KdeConnectDevice:
                         )
                 else:
                     self._requested_artwork.pop(name, None)
+                    self._store_inline_artwork(name, url)
         else:
             return
         self._notify()
+
+    def _store_inline_artwork(self, name: str, url: Any) -> None:
+        """Decode artwork that a player embeds as a base64 data: URL."""
+        if not isinstance(url, str) or not url.startswith("data:image/"):
+            return
+        header, _, encoded = url.partition(",")
+        content_type, _, encoding = header[5:].partition(";")
+        if encoding != "base64" or len(encoded) > MAX_ARTWORK_SIZE * 4 // 3 + 4:
+            return
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            return
+        if not data or content_type not in IMAGE_TYPES.values():
+            return
+        self.media_artwork[name] = (
+            url,
+            data,
+            content_type,
+            hashlib.sha256(data).hexdigest()[:16],
+        )
+        while len(self.media_artwork) > MAX_ARTWORK_CACHE:
+            self.media_artwork.pop(next(iter(self.media_artwork)))
 
     def _handle_artwork(self, packet: Packet) -> None:
         name, url = packet.body.get("player"), packet.body.get("albumArtUrl")

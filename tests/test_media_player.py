@@ -235,3 +235,52 @@ async def test_local_artwork_payload_and_track_change(
     assert not next(iter(entry.runtime_data.devices.values())).media_artwork
     peer.close()
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_inline_data_url_artwork(
+    hass: HomeAssistant, hass_client_no_auth
+) -> None:
+    """Artwork embedded as a base64 data URL is served without any transfer."""
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    image = BytesIO()
+    Image.new("RGB", (16, 16), "red").save(image, format="JPEG")
+    jpeg = image.getvalue()
+    entry = await _setup(hass)
+    peer = FakeDevice("Fake PC", protocol_version=8)
+    peer.players = {
+        "Jellyfin": {
+            "title": "One",
+            "isPlaying": True,
+            "albumArtUrl": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(),
+        }
+    }
+    await _pair(hass, entry, peer)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    await peer.connect(entry.runtime_data.hub.tcp_port)
+    await _settle(hass)
+    picture = hass.states.get(ENTITY).attributes["entity_picture"]
+    client = await hass_client_no_auth()
+    response = await client.get(picture)
+    assert response.status == 200
+    assert response.content_type == "image/jpeg"
+    assert await response.read() == jpeg
+    # Malformed or unsupported data URLs are ignored.
+    for bad in (
+        "data:image/jpeg;base64,!!!",
+        "data:text/plain;base64,AAAA",
+        "data:image/png,abc",
+    ):
+        peer.players["Jellyfin"]["albumArtUrl"] = bad
+        peer.send(
+            Packet(
+                "kdeconnect.mpris", {"player": "Jellyfin", **peer.players["Jellyfin"]}
+            )
+        )
+        await _settle(hass)
+        assert "entity_picture" not in hass.states.get(ENTITY).attributes
+    peer.close()
+    assert await hass.config_entries.async_unload(entry.entry_id)
