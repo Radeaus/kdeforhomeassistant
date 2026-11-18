@@ -155,6 +155,20 @@
       "screen": {
         "name": "Scherm"
       }
+    },
+    "event": {
+      "notification": {
+        "name": "Melding",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "added": "Toegevoegd",
+              "updated": "Bijgewerkt",
+              "removed": "Verwijderd"
+            }
+          }
+        }
+      }
     }
   },
   "exceptions": {

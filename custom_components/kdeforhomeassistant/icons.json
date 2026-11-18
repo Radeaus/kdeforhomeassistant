@@ -38,6 +38,11 @@
       "screen": {
         "default": "mdi:monitor-screenshot"
       }
+    },
+    "event": {
+      "notification": {
+        "default": "mdi:message-badge-outline"
+      }
     }
   }
 }

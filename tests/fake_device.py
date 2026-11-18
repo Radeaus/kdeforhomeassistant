@@ -172,11 +172,23 @@ class FakeDevice:
                             )
                         )
 
+    def notify(self, **body) -> None:
+        """Send a notification, like notification sync does."""
+        self.send(Packet("kdeconnect.notification", body))
+
+    async def notify_with_icon(self, icon: bytes, **body) -> None:
+        """Send a notification with its icon as payload, and wait until it is fetched."""
+        await self._offer(Packet("kdeconnect.notification", body), icon)
+
     async def share(self, filename: str, data: bytes) -> None:
         """Share a file like KDE Connect does: offer it on a port and wait.
 
         The receiver connects to the port and we are the TLS server there.
         """
+        packet = Packet("kdeconnect.share.request", {"filename": filename, "open": False})
+        await self._offer(packet, data)
+
+    async def _offer(self, packet: Packet, data: bytes) -> None:
         loop = asyncio.get_running_loop()
         context = await loop.run_in_executor(None, self._server_context)
         served = asyncio.Event()
@@ -189,7 +201,6 @@ class FakeDevice:
 
         server = await asyncio.start_server(serve, "127.0.0.1", 0, ssl=context)
         port = server.sockets[0].getsockname()[1]
-        packet = Packet("kdeconnect.share.request", {"filename": filename, "open": False})
         packet.payload_size = len(data)
         packet.payload_port = port
         self.send(packet)

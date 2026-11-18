@@ -15,7 +15,9 @@ from homeassistant.components import network
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -42,6 +44,19 @@ from .kdeconnect.protocol import (
     PACKET_TYPE_SYSTEMVOLUME,
     PACKET_TYPE_SYSTEMVOLUME_REQUEST,
     pem_to_der,
+)
+from .notifications import (
+    ACTION_ADDED,
+    ACTION_REMOVED,
+    ACTION_UPDATED,
+    EVENT_NOTIFICATION,
+    ICON_URL,
+    MAX_ICON_SIZE,
+    MAX_SHARED,
+    NotificationStore,
+    async_get_icons,
+    clean_app_name,
+    notification_content,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -98,8 +113,10 @@ class KdeConnectDevice:
         entry: ConfigEntry,
         subentry: ConfigSubentry,
         hub: KdeConnectHub,
+        notifications: NotificationStore | None = None,
     ) -> None:
         self.hass = hass
+        self.notifications = notifications
         self.entry = entry
         self.subentry = subentry
         self.subentry_id = subentry.subentry_id
@@ -127,6 +144,11 @@ class KdeConnectDevice:
         self.screen_time: datetime | None = None
         self._listeners: list[Callable[[], None]] = []
         self._command_listeners: list[Callable[[], None]] = []
+        self._notification_listeners: list[Callable[[dict[str, Any]], None]] = []
+        # Notifications we passed on, by id, to report when they go away.
+        self._shared_notifications: dict[str, str] = {}
+        self._notification_icon_urls: dict[str, str] = {}
+        self._notification_tokens: dict[str, object] = {}
         # Log a lost connection once, and once when it comes back.
         self._logged_unavailable = False
 
@@ -171,6 +193,14 @@ class KdeConnectDevice:
         """Call the listener when the device sends a new command list."""
         self._command_listeners.append(listener)
         return lambda: self._command_listeners.remove(listener)
+
+    @callback
+    def async_add_notification_listener(
+        self, listener: Callable[[dict[str, Any]], None]
+    ) -> Callable[[], None]:
+        """Call the listener with every notification the device shares."""
+        self._notification_listeners.append(listener)
+        return lambda: self._notification_listeners.remove(listener)
 
     @callback
     def _notify(self) -> None:
@@ -243,6 +273,105 @@ class KdeConnectDevice:
             self._handle_mpris(body)
         elif packet.type == PACKET_TYPE_SYSTEMVOLUME:
             self._handle_systemvolume(body)
+        elif packet.type == PACKET_TYPE_NOTIFICATION:
+            self._handle_notification(packet)
+
+    # Notifications the device shares with us
+
+    @callback
+    def _handle_notification(self, packet: Packet) -> None:
+        body = packet.body
+        notification_id = body.get("id")
+        if self.notifications is None or not isinstance(notification_id, str):
+            return
+        if body.get("isCancel"):
+            self._notification_tokens.pop(notification_id, None)
+            self._notification_icon_urls.pop(notification_id, None)
+            if (
+                app := self._shared_notifications.pop(notification_id, None)
+            ) is not None:
+                self._fire_notification(
+                    {"action": ACTION_REMOVED, "id": notification_id, "app": app}
+                )
+            return
+        app = clean_app_name(body.get("appName"))
+        if self.notifications.async_seen(self.device_id, app):
+            # A new app to choose on the panel.
+            self._notify()
+        silent = body.get("silent") is True
+        if not self.notifications.get(self.device_id).shares(app, silent):
+            return
+        if self._shared_notifications.get(notification_id) != app:
+            self._notification_icon_urls.pop(notification_id, None)
+        action = (
+            ACTION_UPDATED
+            if self._shared_notifications.get(notification_id) == app
+            else ACTION_ADDED
+        )
+        self._shared_notifications.pop(notification_id, None)
+        self._shared_notifications[notification_id] = app
+        revision = self._notification_tokens[notification_id] = object()
+        while len(self._shared_notifications) > MAX_SHARED:
+            expired_id = next(iter(self._shared_notifications))
+            del self._shared_notifications[expired_id]
+            self._notification_icon_urls.pop(expired_id, None)
+            self._notification_tokens.pop(expired_id, None)
+        title, text = notification_content(body)
+        data: dict[str, Any] = {
+            "action": action,
+            "id": notification_id,
+            "app": app,
+            "title": title,
+            "text": text,
+            "ticker": _text(body.get("ticker")),
+            "silent": silent,
+            "icon_url": self._notification_icon_urls.get(notification_id),
+        }
+        size, port = packet.payload_size, packet.payload_port
+        if size is not None and port is not None and 0 < size <= MAX_ICON_SIZE:
+            self.entry.async_create_background_task(
+                self.hass,
+                self._async_notification_with_icon(data, port, size, revision),
+                f"{self.name} notification icon",
+            )
+        else:
+            self._fire_notification(data)
+
+    async def _async_notification_with_icon(
+        self, data: dict[str, Any], port: int, size: int, revision: object
+    ) -> None:
+        try:
+            icon = await self.hub.async_download_payload(self.device_id, port, size)
+        except (OSError, TimeoutError) as err:
+            _LOGGER.debug("No icon for a notification of %s: %s", self.name, err)
+        else:
+            if self._notification_tokens.get(data["id"]) is not revision:
+                return
+            token = async_get_icons(self.hass).add(icon)
+            path = f"{ICON_URL}/{token}.png"
+            try:
+                base = get_url(self.hass, prefer_external=False)
+            except NoURLAvailableError:
+                base = ""
+            data["icon_url"] = base + path
+            if data["id"] in self._shared_notifications:
+                self._notification_icon_urls[data["id"]] = data["icon_url"]
+        if self._notification_tokens.get(data["id"]) is revision:
+            self._fire_notification(data)
+
+    @callback
+    def _fire_notification(self, data: dict[str, Any]) -> None:
+        registry_device = dr.async_get(self.hass).async_get_device(
+            identifiers={(DOMAIN, self.device_id)}
+        )
+        data = {
+            "device_id": registry_device.id if registry_device else None,
+            "device_name": self.name,
+            **data,
+        }
+        self.hass.bus.async_fire(EVENT_NOTIFICATION, data)
+        for listener in list(self._notification_listeners):
+            listener(data)
 
     def _handle_share(self, packet: Packet) -> None:
         filename = packet.body.get("filename")
@@ -289,9 +418,7 @@ class KdeConnectDevice:
                 )
         elif isinstance(name := body.get("player"), str) and name in self.players:
             player = self.players[name]
-            player.update(
-                {key: body[key] for key in PLAYER_FIELDS if key in body}
-            )
+            player.update({key: body[key] for key in PLAYER_FIELDS if key in body})
             if "pos" in body:
                 player["posUpdatedAt"] = dt_util.utcnow()
         else:
@@ -523,6 +650,10 @@ class KdeConnectDevice:
         if (info := self.hub.discovered.get(self.device_id)) and info.host:
             addresses.add(info.host)
         await self.hass.async_add_executor_job(_send_magic_packet, packet, addresses)
+
+
+def _text(value: Any) -> str:
+    return value if isinstance(value, str) else ""
 
 
 def _normal_volume(sink: dict[str, Any]) -> int:

@@ -217,6 +217,17 @@ const STRINGS = {
     btn_next: "Next track",
     btn_screenshot: "Screenshot",
     btn_browser: "Open browser",
+    notif: "Notifications",
+    notif_text:
+      "Share the notifications of {name} with Home Assistant. Turn on notification sync for Home Assistant in KDE Connect on {name}. Each notification fires a kdeforhomeassistant_notification event and the Notification entity.",
+    notif_enabled: "Share notifications",
+    notif_silent: "Include silent notifications",
+    notif_silent_help: "Silent ones include the notifications a phone sends again when it connects.",
+    notif_share_new: "Share apps not seen before",
+    notif_apps: "Apps",
+    notif_no_apps: "No notifications from {name} yet. Its apps show up here after their first notification.",
+    notif_apps_help: "Choose per app. Getting the same app from two devices? Turn it off on one of them.",
+    notif_forget: "Forget",
   },
   nl: {
     title: "KDE for Home Assistant",
@@ -425,6 +436,17 @@ const STRINGS = {
     btn_next: "Volgend nummer",
     btn_screenshot: "Schermafdruk",
     btn_browser: "Browser openen",
+    notif: "Meldingen",
+    notif_text:
+      "Deel de meldingen van {name} met Home Assistant. Zet in KDE Connect op {name} meldingen synchroniseren aan voor Home Assistant. Elke melding geeft een kdeforhomeassistant_notification-gebeurtenis en de entiteit Melding.",
+    notif_enabled: "Meldingen delen",
+    notif_silent: "Ook stille meldingen",
+    notif_silent_help: "Stille meldingen zijn ook de meldingen die een telefoon opnieuw stuurt als hij verbindt.",
+    notif_share_new: "Nieuwe apps delen",
+    notif_apps: "Apps",
+    notif_no_apps: "Nog geen meldingen van {name}. Apps verschijnen hier na hun eerste melding.",
+    notif_apps_help: "Kies per app. Krijg je dezelfde app van twee apparaten? Zet hem op een van beide uit.",
+    notif_forget: "Vergeten",
   },
 };
 
@@ -1093,6 +1115,10 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       this._wiz.scripts = [...set];
     } else if (field === "deviceScript") {
       this._toggleDeviceScript(target.dataset.id, target.dataset.value, target.checked);
+    } else if (field === "notif") {
+      this._updateNotifications(target.dataset.id, { [target.dataset.value]: target.checked });
+    } else if (field === "notifApp") {
+      this._updateNotifications(target.dataset.id, { apps: { [target.dataset.value]: target.checked } });
     } else if (field === "commandShown") {
       this._setCommandHidden(target.dataset.id, target.dataset.value, !target.checked);
     }
@@ -1337,6 +1363,9 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       case "command-restore":
         await this._setCommandHidden(data.id, data.key, false);
         return;
+      case "notif-forget":
+        this._updateNotifications(el.dataset.id, { forget: [el.dataset.key] });
+        return;
       case "remove":
         this._edit.removing = true;
         this._render();
@@ -1447,6 +1476,44 @@ class KdeForHomeAssistantPanel extends HTMLElement {
       await this._ws("update_device", { subentry_id: id, hidden_commands: [...set] });
       this._edit.removeCommand = null;
     });
+  }
+
+  async _updateNotifications(id, changes) {
+    await this._run("notif", () =>
+      this._ws("update_notifications", { subentry_id: id, ...changes })
+    );
+  }
+
+  _notificationsCard(d) {
+    const n = d.notifications;
+    if (!n) return "";
+    const busy = this._busy.has("notif") ? "disabled" : "";
+    const sw = (field, value, checked, disabled = "") =>
+      `<ha-switch data-field="${field}" data-id="${esc(d.id)}" data-value="${esc(value)}" ${checked ? "checked" : ""} ${busy} ${disabled}></ha-switch>`;
+    const off = n.enabled ? "" : "disabled";
+    const apps = Object.keys(n.apps).sort((a, b) => a.localeCompare(b));
+    const appList = apps.length
+      ? `<div class="list">${apps
+          .map((app) =>
+            this._row({
+              iconName: "mdi:application-outline",
+              headline: app,
+              end:
+                `<ha-icon-button data-action="notif-forget" data-id="${esc(d.id)}" data-key="${esc(app)}" label="${esc(this._t("notif_forget"))}">${icon("mdi:delete-outline")}</ha-icon-button>` +
+                sw("notifApp", app, n.apps[app], off),
+            })
+          )
+          .join("")}</div>`
+      : `<div class="inline-empty">${esc(this._t("notif_no_apps", { name: d.name }))}</div>`;
+    return `<ha-card header="${esc(this._t("notif"))}">
+      <p class="card-text">${esc(this._t("notif_text", { name: d.name }))}</p>
+      <div class="list">
+        ${this._row({ iconName: "mdi:message-badge-outline", headline: this._t("notif_enabled"), end: sw("notif", "enabled", n.enabled) })}
+        ${this._row({ iconName: "mdi:bell-off-outline", headline: this._t("notif_silent"), supporting: esc(this._t("notif_silent_help")), end: sw("notif", "include_silent", n.include_silent, off) })}
+        ${this._row({ iconName: "mdi:new-box", headline: this._t("notif_share_new"), end: sw("notif", "share_new", n.share_new, off) })}
+      </div>
+      <div class="subheader">${esc(this._t("notif_apps"))}</div>
+      <p class="hint card-text">${esc(this._t("notif_apps_help"))}</p>${appList}</ha-card>`;
   }
 
   async _toggleDeviceScript(id, entityId, checked) {
@@ -2021,6 +2088,7 @@ class KdeForHomeAssistantPanel extends HTMLElement {
         <ha-card header="${esc(this._t("buttons"))}">
           <p class="card-text">${esc(this._t("buttons_text", { name: d.name }))}</p>${commands}
           <div class="card-actions">${isComputer(d.type) ? this._button(this._t("helper_open"), "helper-open", { appearance: "plain", iconName: "mdi:creation-outline", data: { id: d.id } }) : ""}${this._button(this._t("add_command", { name: d.name }), "command-setup", { appearance: "outlined", iconName: "mdi:cog-outline", data: { id: d.id, name: d.name }, disabled: !d.connected, busy: this._busy.has("setup" + d.id) })}</div></ha-card>
+        ${this._notificationsCard(d)}
         <ha-card header="${esc(this._t("scripts"))}">
           <p class="card-text">${esc(this._t("step_scripts_text", { name: d.name }))}</p>${scriptList}
           <div class="card-actions">${this._link(this._t("create_script"), "/config/script/edit/new", { iconName: "mdi:plus" })}</div></ha-card>
