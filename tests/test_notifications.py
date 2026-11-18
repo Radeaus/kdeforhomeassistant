@@ -93,6 +93,7 @@ async def test_choose_apps_per_device(hass: HomeAssistant, hass_ws_client) -> No
         ("Desk", "Telegram"),
     ]
     event = events[1].data
+    desk_notification_id = event["id"]
     assert event["action"] == "added"
     assert event["title"] == "Ann"
     assert event["text"] == "Again"
@@ -118,8 +119,8 @@ async def test_choose_apps_per_device(hass: HomeAssistant, hass_ws_client) -> No
     desk.notify(appName="No id")
     await _settle(hass)
     assert [(e.data["action"], e.data["id"]) for e in events] == [
-        ("updated", "9"),
-        ("removed", "9"),
+        ("updated", desk_notification_id),
+        ("removed", desk_notification_id),
     ]
     assert (
         hass.states.get("event.desk_notification").attributes["event_type"] == "removed"

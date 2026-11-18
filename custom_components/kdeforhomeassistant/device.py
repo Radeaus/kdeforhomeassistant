@@ -58,9 +58,11 @@ from .notifications import (
     ICON_URL,
     MAX_ICON_SIZE,
     MAX_SHARED,
+    DesktopNotificationChats,
     NotificationStore,
     async_get_icons,
     clean_app_name,
+    is_chat_notification,
     notification_content,
 )
 
@@ -161,6 +163,7 @@ class KdeConnectDevice:
         self._notification_listeners: list[Callable[[dict[str, Any]], None]] = []
         # Notifications we passed on, by id, to report when they go away.
         self._shared_notifications: dict[str, str] = {}
+        self._desktop_chats = DesktopNotificationChats()
         self._notification_icon_urls: dict[str, str] = {}
         self._notification_tokens: dict[str, object] = {}
         # Log a lost connection once, and once when it comes back.
@@ -302,7 +305,11 @@ class KdeConnectDevice:
         notification_id = body.get("id")
         if self.notifications is None or not isinstance(notification_id, str):
             return
+        source_id = notification_id
         if body.get("isCancel"):
+            notification_id, keep_chat = self._desktop_chats.remove(source_id)
+            if keep_chat:
+                return
             self._notification_tokens.pop(notification_id, None)
             self._notification_icon_urls.pop(notification_id, None)
             if (
@@ -319,6 +326,18 @@ class KdeConnectDevice:
         silent = body.get("silent") is True
         if not self.notifications.get(self.device_id).shares(app, silent):
             return
+        title, text = notification_content(body)
+        if self.device_type in ("desktop", "laptop") and is_chat_notification(
+            app, body
+        ):
+            notification_id, text = self._desktop_chats.add(
+                source_id,
+                app,
+                title,
+                text,
+                complete=isinstance(body.get("conversation"), list)
+                and bool(body["conversation"]),
+            )
         if self._shared_notifications.get(notification_id) != app:
             self._notification_icon_urls.pop(notification_id, None)
         action = (
@@ -334,7 +353,6 @@ class KdeConnectDevice:
             del self._shared_notifications[expired_id]
             self._notification_icon_urls.pop(expired_id, None)
             self._notification_tokens.pop(expired_id, None)
-        title, text = notification_content(body)
         data: dict[str, Any] = {
             "action": action,
             "id": notification_id,
@@ -345,6 +363,8 @@ class KdeConnectDevice:
             "silent": silent,
             "icon_url": self._notification_icon_urls.get(notification_id),
         }
+        if notification_id != source_id:
+            data["source_id"] = source_id
         size, port = packet.payload_size, packet.payload_port
         if size is not None and port is not None and 0 < size <= MAX_ICON_SIZE:
             self.entry.async_create_background_task(

@@ -10,7 +10,9 @@ entry, which would drop every connection.
 from __future__ import annotations
 
 import secrets
+import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Final
 
@@ -258,3 +260,113 @@ def notification_content(body: dict[str, Any]) -> tuple[str, str]:
             previous_sender = sender
         lines.append(message["content"])
     return title, "\n".join(lines)
+
+
+# Desktop notifications generally provide a sender title, not conversation history.
+CHAT_APPS = frozenset(
+    {
+        "telegram",
+        "telegramdesktop",
+        "signal",
+        "signaldesktop",
+        "discord",
+        "whatsapp",
+        "whatsappdesktop",
+        "element",
+        "slack",
+        "teams",
+        "microsoftteams",
+    }
+)
+MAX_CHAT_MESSAGES = 20
+MAX_CHAT_TEXT = 768
+CHAT_IDLE_SECONDS = 300
+
+
+def is_chat_notification(app: str, body: dict[str, Any]) -> bool:
+    """Recognize messaging apps or an explicit freedesktop instant-message category."""
+    category = body.get("category")
+    return app.casefold().replace(" ", "").replace("-", "") in CHAT_APPS or (
+        isinstance(category, str) and category.startswith("im.")
+    )
+
+
+@dataclass
+class _DesktopChat:
+    notification_id: str
+    touched: float
+    messages: list[str] = field(default_factory=list)
+    sources: OrderedDict[str, str] = field(default_factory=OrderedDict)
+
+
+class DesktopNotificationChats:
+    """Bounded, in-memory chat history; one instance belongs to one device."""
+
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._chats: OrderedDict[tuple[str, str], _DesktopChat] = OrderedDict()
+        self._sources: dict[str, tuple[str, str]] = {}
+
+    def _forget(self, key: tuple[str, str]) -> None:
+        chat = self._chats.pop(key)
+        for source in chat.sources:
+            self._sources.pop(source, None)
+
+    def add(
+        self, source: str, app: str, title: str, text: str, *, complete: bool = False
+    ) -> tuple[str, str]:
+        """Append a new message, or replace a sender-provided conversation snapshot."""
+        if (
+            not title.strip()
+            or len(title) > 256
+            or not text
+            or len(source) > 1024
+            or title.strip().casefold()
+            in (app.casefold(), app.casefold().removesuffix(" desktop"))
+        ):
+            return source, text
+        now = self._clock()
+        for expired in [
+            key
+            for key, chat in self._chats.items()
+            if now - chat.touched >= CHAT_IDLE_SECONDS
+        ]:
+            self._forget(expired)
+        key = (app, title.strip())
+        if (previous := self._sources.get(source)) is not None and previous != key:
+            self.remove(source)
+        chat = self._chats.get(key)
+        if chat is None:
+            chat = self._chats[key] = _DesktopChat(
+                "chat:" + secrets.token_urlsafe(18), now
+            )
+        self._chats.move_to_end(key)
+        chat.touched = now
+        text = text[-MAX_CHAT_TEXT:]
+        current = "\n".join(chat.messages)
+        if complete or (current and text.startswith(current + "\n")):
+            chat.messages = [text]
+        elif chat.sources.get(source) != text:
+            chat.messages.append(text)
+        chat.messages = chat.messages[-MAX_CHAT_MESSAGES:]
+        chat.sources[source] = text
+        chat.sources.move_to_end(source)
+        self._sources[source] = key
+        while len(chat.sources) > MAX_CHAT_MESSAGES:
+            old, _ = chat.sources.popitem(last=False)
+            self._sources.pop(old, None)
+        while len(self._chats) > MAX_SHARED:
+            self._forget(next(iter(self._chats)))
+        return chat.notification_id, "\n".join(chat.messages)[-MAX_CHAT_TEXT:]
+
+    def remove(self, source: str) -> tuple[str, bool]:
+        """Dismiss only when every tracked notification in this chat is removed."""
+        key = self._sources.pop(source, None)
+        if key is None:
+            return source, False
+        chat = self._chats[key]
+        chat.sources.pop(source, None)
+        if chat.sources:
+            return chat.notification_id, True
+        self._forget(key)
+        return chat.notification_id, False
