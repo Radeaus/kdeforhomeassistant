@@ -43,7 +43,7 @@ from .device import KdeConnectDevice
 from .kdeconnect import Identity, KdeConnectHub
 from .kdeconnect.protocol import UDP_PORT
 from .legacy import async_check_legacy_issue
-from .notifications import NotificationStore
+from .notifications import NotificationStore, async_remove_store
 from .panel import async_register_panel, async_remove_panel
 from .websocket import async_register_websocket_commands
 
@@ -223,14 +223,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) 
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         await entry.runtime_data.hub.stop()
+        await entry.runtime_data.notifications.async_save()
         persistent_notification.async_dismiss(hass, PAIR_NOTIFICATION_ID)
         async_dispatcher_send(hass, SIGNAL_UPDATE)
     return unloaded
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -> None:
-    """Take the panel out of the sidebar."""
+    """Take the panel out of the sidebar and forget the notification choices."""
     async_remove_panel(hass)
+    await async_remove_store(hass)
 
 
 async def _async_update_listener(

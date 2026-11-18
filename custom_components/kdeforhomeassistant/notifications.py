@@ -91,6 +91,7 @@ class NotificationStore:
     def __init__(self, hass: HomeAssistant) -> None:
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._devices: dict[str, NotificationSettings] = {}
+        self._unsaved = False
 
     async def async_load(self) -> None:
         """Read the stored settings."""
@@ -152,8 +153,19 @@ class NotificationStore:
         if self._devices.pop(device_id, None) is not None:
             self._schedule_save()
 
+    async def async_save(self) -> None:
+        """Write changes now.
+
+        A reload reads the settings from disk again, so changes that still
+        wait for the delayed save would be lost.
+        """
+        if self._unsaved:
+            self._unsaved = False
+            await self._store.async_save(self._data())
+
     @callback
     def _schedule_save(self) -> None:
+        self._unsaved = True
         self._store.async_delay_save(self._data, SAVE_DELAY)
 
     def _data(self) -> dict[str, Any]:
@@ -163,6 +175,11 @@ class NotificationStore:
                 for device_id, settings in self._devices.items()
             }
         }
+
+
+async def async_remove_store(hass: HomeAssistant) -> None:
+    """Delete the stored settings, when the integration is removed."""
+    await Store(hass, STORAGE_VERSION, STORAGE_KEY).async_remove()
 
 
 class NotificationIcons:
@@ -326,12 +343,6 @@ class DesktopNotificationChats:
         ):
             return source, text
         now = self._clock()
-        for expired in [
-            key
-            for key, chat in self._chats.items()
-            if now - chat.touched >= CHAT_IDLE_SECONDS
-        ]:
-            self._forget(expired)
         key = (app, title.strip())
         if (previous := self._sources.get(source)) is not None and previous != key:
             self.remove(source)
@@ -340,13 +351,17 @@ class DesktopNotificationChats:
             chat = self._chats[key] = _DesktopChat(
                 "chat:" + secrets.token_urlsafe(18), now
             )
+        elif now - chat.touched >= CHAT_IDLE_SECONDS:
+            # Start the text again, but keep the id: the notifications are
+            # still on the device, and removing them must reach this chat.
+            chat.messages = []
         self._chats.move_to_end(key)
         chat.touched = now
         text = text[-MAX_CHAT_TEXT:]
         current = "\n".join(chat.messages)
         if complete or (current and text.startswith(current + "\n")):
             chat.messages = [text]
-        elif chat.sources.get(source) != text:
+        elif chat.sources.get(source) != text or not chat.messages:
             chat.messages.append(text)
         chat.messages = chat.messages[-MAX_CHAT_MESSAGES:]
         chat.sources[source] = text

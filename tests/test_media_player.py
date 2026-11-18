@@ -284,3 +284,44 @@ async def test_inline_data_url_artwork(
         assert "entity_picture" not in hass.states.get(ENTITY).attributes
     peer.close()
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_local_artwork_without_extension(
+    hass: HomeAssistant, hass_client_no_auth
+) -> None:
+    """Artwork in a file without an extension is recognized by its content."""
+    from custom_components.kdeforhomeassistant.device import _image_type
+
+    assert _image_type(b"\xff\xd8\xff\xe0rest") == "image/jpeg"
+    assert _image_type(b"RIFF\x00\x00\x00\x00WEBPVP8 ") == "image/webp"
+    assert _image_type(b"not an image") is None
+
+    png = b"\x89PNG\r\n\x1a\n" + b"pixels" * 20
+    url = "file:///tmp/.org.chromium.Chromium.Ab12Cd"
+    entry = await _setup(hass)
+    peer = FakeDevice("Fake PC", protocol_version=8)
+    peer.players = {
+        "Browser": {"title": "Video", "isPlaying": True, "albumArtUrl": url}
+    }
+    await _pair(hass, entry, peer)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    await peer.connect(entry.runtime_data.hub.tcp_port)
+    await peer.wait_for("kdeconnect.mpris.request", player="Browser", albumArtUrl=url)
+    art_packet = Packet(
+        "kdeconnect.mpris",
+        {"player": "Browser", "transferringAlbumArt": True, "albumArtUrl": url},
+    )
+    # Something that is no image and has no extension is still left out.
+    await peer._offer(art_packet, b"not an image")
+    await _settle(hass)
+    assert "entity_picture" not in hass.states.get(ENTITY).attributes
+    await peer._offer(art_packet, png)
+    await _settle(hass)
+    picture = hass.states.get(ENTITY).attributes["entity_picture"]
+    client = await hass_client_no_auth()
+    response = await client.get(picture)
+    assert response.status == 200
+    assert response.content_type == "image/png"
+    assert await response.read() == png
+    peer.close()
+    assert await hass.config_entries.async_unload(entry.entry_id)

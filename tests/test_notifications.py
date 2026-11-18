@@ -448,3 +448,27 @@ async def test_timed_out_icon_still_delivers_text(hass: HomeAssistant) -> None:
     assert events[-1].data["icon_url"] is None
     peer.close()
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_choices_survive_reload_and_go_with_the_entry(
+    hass: HomeAssistant, hass_storage
+) -> None:
+    """A reload right after a change keeps it; removing the entry deletes the file."""
+    entry = await _setup(hass)
+    device = await _connected(hass, entry, "Phone")
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    device_id = entry.subentries[_subentry_id(entry, "Phone")].data["device_id"]
+    entry.runtime_data.notifications.async_update(
+        device_id, enabled=True, apps={"Telegram": False}
+    )
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    settings = entry.runtime_data.notifications.get(device_id)
+    assert settings.enabled is True
+    assert settings.apps == {"Telegram": False}
+    assert "kdeforhomeassistant.notifications" in hass_storage
+
+    device.close()
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert "kdeforhomeassistant.notifications" not in hass_storage

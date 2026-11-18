@@ -110,6 +110,8 @@ IMAGE_TYPES = {
 }
 MAX_IMAGE_SIZE = 25 * 1024 * 1024
 MAX_ARTWORK_SIZE = 5 * 1024 * 1024
+# A notification waits for its icon, so do not wait long for one.
+ICON_TIMEOUT = 10
 MAX_ARTWORK_CACHE = 16
 # Players may announce a new track before rewriting a reused artwork file.
 ARTWORK_RETRY_DELAY = 2.0
@@ -379,7 +381,9 @@ class KdeConnectDevice:
         self, data: dict[str, Any], port: int, size: int, revision: object
     ) -> None:
         try:
-            icon = await self.hub.async_download_payload(self.device_id, port, size)
+            icon = await self.hub.async_download_payload(
+                self.device_id, port, size, timeout=ICON_TIMEOUT
+            )
         except (OSError, TimeoutError) as err:
             _LOGGER.debug("No icon for a notification of %s: %s", self.name, err)
         else:
@@ -558,7 +562,10 @@ class KdeConnectDevice:
             or self._requested_artwork.get(name) != request
         ):
             return
-        content_type = IMAGE_TYPES.get(PurePath(urlsplit(url).path).suffix.lower())
+        # Some players keep artwork in a file without an extension.
+        content_type = _image_type(data) or IMAGE_TYPES.get(
+            PurePath(urlsplit(url).path).suffix.lower()
+        )
         if content_type is None:
             return
         previous = self.media_artwork.get(name)
@@ -835,6 +842,17 @@ class KdeConnectDevice:
         if (info := self.hub.discovered.get(self.device_id)) and info.host:
             addresses.add(info.host)
         await self.hass.async_add_executor_job(_send_magic_packet, packet, addresses)
+
+
+def _image_type(data: bytes) -> str | None:
+    """Recognize a PNG, JPEG or WebP image by its first bytes."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 def _text(value: Any) -> str:

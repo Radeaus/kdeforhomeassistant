@@ -76,10 +76,18 @@ def test_bounded_history_and_idle_expiry():
     assert len(text) <= MAX_CHAT_TEXT
     assert len(next(iter(chats._chats.values())).messages) <= MAX_CHAT_MESSAGES
     assert len(chats._sources) <= MAX_CHAT_MESSAGES
+    # After a while the text starts again, but the chat keeps its id, so
+    # removing the older notifications on the device still reaches it.
     clock[0] = 301.0
     new_id, text = chats.add("new", "Telegram", "Alice", "After inactivity")
-    assert new_id != identifier
+    assert new_id == identifier
     assert text == "After inactivity"
+    assert chats.remove("39") == (identifier, True)
+    clock[0] = 700.0
+    assert chats.add("new", "Telegram", "Alice", "After inactivity") == (
+        identifier,
+        "After inactivity",
+    )
     for index in range(MAX_SHARED + 1):
         chats.add("id" + str(index), "Telegram", "Sender " + str(index), "Message")
     assert len(chats._chats) == MAX_SHARED
