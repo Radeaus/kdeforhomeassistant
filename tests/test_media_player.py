@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+
+import pytest
 from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
@@ -146,8 +148,13 @@ async def test_media_player(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+@pytest.mark.parametrize("url", [
+    "file:///remote/artwork.png",
+    "file:///run/user/1000/app/rocks.shy.VacuumTube/.org.chromium.Chromium.e89Cnc",
+    "file:///remote/artwork.jpg",  # Trust PNG bytes rather than the misleading suffix.
+])
 async def test_local_artwork_payload_and_track_change(
-    hass: HomeAssistant, hass_client_no_auth
+    hass: HomeAssistant, hass_client_no_auth, url
 ) -> None:
     """A remote file URL is transferred, proxied, and replaced for the next track."""
     from io import BytesIO
@@ -157,7 +164,6 @@ async def test_local_artwork_payload_and_track_change(
     image = BytesIO()
     Image.new("RGB", (16, 16), "red").save(image, format="PNG")
     png = image.getvalue()
-    url = "file:///remote/artwork.png"
     entry = await _setup(hass)
     peer = FakeDevice("Fake PC", protocol_version=8)
     peer.players = {

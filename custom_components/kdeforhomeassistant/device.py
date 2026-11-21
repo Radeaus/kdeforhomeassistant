@@ -13,7 +13,6 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import PurePath
 from typing import Any
-from urllib.parse import urlsplit
 
 from homeassistant.components import network
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
@@ -558,8 +557,15 @@ class KdeConnectDevice:
             or self._requested_artwork.get(name) != request
         ):
             return
-        content_type = IMAGE_TYPES.get(PurePath(urlsplit(url).path).suffix.lower())
-        if content_type is None:
+        # Chromium/VacuumTube use extensionless temporary artwork files.
+        # The remote filename does not reliably describe the transferred bytes.
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            content_type = "image/png"
+        elif data.startswith(b"\xff\xd8\xff"):
+            content_type = "image/jpeg"
+        elif data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+            content_type = "image/webp"
+        else:
             return
         previous = self.media_artwork.get(name)
         if previous and previous[0] == url and previous[1] == data:
