@@ -144,6 +144,19 @@ class KdeConnectMediaPlayer(KdeConnectEntity, MediaPlayerEntity):
         return None
 
     @property
+    def media_image_hash(self) -> str | None:
+        """Refresh the HA media proxy when transferred artwork changes."""
+        if artwork := self.device.media_artwork.get(self.device.active_player):
+            return artwork[3]
+        return super().media_image_hash
+
+    async def async_get_media_image(self) -> tuple[bytes | None, str | None]:
+        """Serve local artwork transferred by KDE Connect, or fetch web artwork."""
+        if artwork := self.device.media_artwork.get(self.device.active_player):
+            return artwork[1], artwork[2]
+        return await super().async_get_media_image()
+
+    @property
     def volume_level(self) -> float | None:
         """Return the volume from 0 to 1."""
         return self.device.volume_level

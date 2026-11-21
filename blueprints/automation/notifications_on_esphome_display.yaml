@@ -1,0 +1,119 @@
+blueprint:
+  name: KDE for Home Assistant · notifications on an ESPHome display
+  description: >-
+    Shows the notifications that your KDE Connect devices share with Home
+    Assistant on an ESPHome display, and clears them when they are removed on
+    the device. Choose per device and per app what is shared on the
+    KDE for Home Assistant page in the sidebar. The display needs the ESPHome
+    actions show_message(title, message, image_url, timeout_seconds) and
+    dismiss_message, as on the OpenNextion knob firmware. Create a Text helper
+    (maximum length 255) to remember which notification is on screen.
+  domain: automation
+  source_url: https://github.com/Radeaus/kdeforhomeassistant/blob/main/blueprints/automation/notifications_on_esphome_display.yaml
+  homeassistant:
+    min_version: "2025.1.0"
+  input:
+    devices:
+      name: Devices
+      description: Only notifications from these devices. Leave empty for all.
+      default: []
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: kdeforhomeassistant
+    active_notification:
+      name: Active notification Text helper
+      selector:
+        entity:
+          filter:
+            - domain: input_text
+    display:
+      name: ESPHome display
+      description: The ESPHome device that shows the notifications.
+      selector:
+        device:
+          filter:
+            - integration: esphome
+    advanced:
+      name: Advanced
+      collapsed: true
+      input:
+        esphome_prefix:
+          name: ESPHome action prefix (optional)
+          description: >-
+            Only needed when the actions are not found. Normally they are named
+            after the device, e.g. esphome.onx2424g013_dbbc54_show_message; enter
+            the part between esphome. and _show_message to override it.
+          default: ""
+          selector:
+            text: {}
+    icon_base_url:
+      name: Icon server URL (optional)
+      description: >-
+        Home Assistant URL reachable by the display, for example
+        http://192.168.1.2:8123. Use this when Home Assistant advertises
+        a VPN address the display cannot reach. Leave empty to use the event URL.
+      default: ''
+      selector:
+        text: {}
+    timeout:
+      name: Timeout
+      description: Seconds before the message disappears; 0 keeps it until removed.
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: s
+variables:
+  devices: !input devices
+  active_notification: !input active_notification
+  display: !input display
+  esphome_prefix: !input esphome_prefix
+  # ESPHome names its actions after the device: "ONX2424G013 dbbc54" -> onx2424g013_dbbc54.
+  prefix: "{{ esphome_prefix | trim or (device_attr(display, 'name') | slugify) }}"
+  icon_base_url: !input icon_base_url
+  timeout: !input timeout
+triggers:
+  - trigger: event
+    event_type: kdeforhomeassistant_notification
+conditions:
+  - condition: template
+    value_template: >-
+      {{ devices | length == 0 or trigger.event.data.device_id in devices }}
+actions:
+  - variables:
+      event: "{{ trigger.event.data }}"
+      key: "{{ (event.device_id ~ '/' ~ event.id)[:255] }}"
+  - choose:
+      - conditions: "{{ event.action in ['added', 'updated'] }}"
+        sequence:
+          - action: "{{ 'esphome.' ~ prefix ~ '_show_message' }}"
+            data:
+              title: "{{ event.title or event.app }}"
+              message: "{{ event.text or event.ticker or event.app }}"
+              image_url: >-
+                {% set icon = event.icon_url or '' %}
+                {% if icon and icon_base_url | trim and '/api/' in icon %}
+                  {{ icon_base_url | trim | trim('/') }}/api/{{ icon.split('/api/', 1)[1] }}
+                {% else %}
+                  {{ icon }}
+                {% endif %}
+              timeout_seconds: "{{ timeout | int(30) }}"
+          - action: input_text.set_value
+            target:
+              entity_id: !input active_notification
+            data:
+              value: "{{ key }}"
+      - conditions: >-
+          {{ event.action == 'removed' and states(active_notification) == key }}
+        sequence:
+          - action: "{{ 'esphome.' ~ prefix ~ '_dismiss_message' }}"
+          - action: input_text.set_value
+            target:
+              entity_id: !input active_notification
+            data:
+              value: ""
+mode: queued
+max: 32

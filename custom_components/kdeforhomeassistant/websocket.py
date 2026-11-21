@@ -15,7 +15,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import format_mac
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send,
+)
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
 from .const import (
@@ -52,6 +55,7 @@ ENTITY_KEYS = (
     "keyboard",
     "screen",
     "notify",
+    "notification",
     "ring",
     "wake",
 )
@@ -73,6 +77,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         ws_command_setup,
         ws_input,
         ws_screenshot,
+        ws_update_notifications,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -167,6 +172,12 @@ def build_state(hass: HomeAssistant) -> dict[str, Any]:
                     command["name"].strip().casefold()
                     in OWN_COMMAND_NAMES["screenshot"]
                     for command in commands.values()
+                ),
+                # What the device shares; only known while the entry is loaded.
+                "notifications": (
+                    entry.runtime_data.notifications.get(device_id).as_dict()
+                    if loaded
+                    else None
                 ),
                 "entities": {
                     key: reg.entity_id
@@ -521,6 +532,41 @@ def ws_update_device(
 
 
 @websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/update_notifications",
+        vol.Required("subentry_id"): cv.string,
+        vol.Optional("enabled"): cv.boolean,
+        vol.Optional("share_new"): cv.boolean,
+        vol.Optional("include_silent"): cv.boolean,
+        vol.Optional("apps"): {cv.string: cv.boolean},
+        vol.Optional("forget"): [cv.string],
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_update_notifications(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Choose whether a device shares its notifications, and of which apps."""
+    if (found := _subentry(hass, connection, msg)) is None:
+        return
+    _, subentry = found
+    if (entry := _loaded_entry(hass)) is None:
+        _not_loaded(connection, msg["id"])
+        return
+    entry.runtime_data.notifications.async_update(
+        subentry.data[CONF_DEVICE_ID],
+        enabled=msg.get("enabled"),
+        share_new=msg.get("share_new"),
+        include_silent=msg.get("include_silent"),
+        apps=msg.get("apps"),
+        forget=msg.get("forget"),
+    )
+    async_dispatcher_send(hass, SIGNAL_UPDATE)
+    connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
     {vol.Required("type"): f"{DOMAIN}/remove_device", vol.Required("subentry_id"): cv.string}
 )
 @websocket_api.require_admin
@@ -534,6 +580,7 @@ def ws_remove_device(
     entry, subentry = found
     if (hub := _hub(hass)) is not None:
         hub.unpair(subentry.data[CONF_DEVICE_ID])
+        entry.runtime_data.notifications.async_remove(subentry.data[CONF_DEVICE_ID])
     hass.config_entries.async_remove_subentry(entry, subentry.subentry_id)
     connection.send_result(msg["id"])
 

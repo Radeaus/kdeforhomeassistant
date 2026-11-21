@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import json
 import logging
 import socket
@@ -15,7 +18,10 @@ from homeassistant.components import network
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -42,6 +48,21 @@ from .kdeconnect.protocol import (
     PACKET_TYPE_SYSTEMVOLUME,
     PACKET_TYPE_SYSTEMVOLUME_REQUEST,
     pem_to_der,
+)
+from .notifications import (
+    ACTION_ADDED,
+    ACTION_REMOVED,
+    ACTION_UPDATED,
+    EVENT_NOTIFICATION,
+    ICON_URL,
+    MAX_ICON_SIZE,
+    MAX_SHARED,
+    DesktopNotificationChats,
+    NotificationStore,
+    async_get_icons,
+    clean_app_name,
+    is_chat_notification,
+    notification_content,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,6 +108,11 @@ IMAGE_TYPES = {
     ".webp": "image/webp",
 }
 MAX_IMAGE_SIZE = 25 * 1024 * 1024
+MAX_ARTWORK_SIZE = 5 * 1024 * 1024
+MAX_ARTWORK_CACHE = 16
+# Players may announce a new track before rewriting a reused artwork file.
+ARTWORK_RETRY_DELAY = 2.0
+ARTWORK_RETRIES = 3
 
 
 class KdeConnectDevice:
@@ -98,8 +124,10 @@ class KdeConnectDevice:
         entry: ConfigEntry,
         subentry: ConfigSubentry,
         hub: KdeConnectHub,
+        notifications: NotificationStore | None = None,
     ) -> None:
         self.hass = hass
+        self.notifications = notifications
         self.entry = entry
         self.subentry = subentry
         self.subentry_id = subentry.subentry_id
@@ -118,6 +146,10 @@ class KdeConnectDevice:
         self.remote_commands: dict[str, dict[str, str]] = {}
         self.locked: bool | None = None
         self.players: dict[str, dict[str, Any]] = {}
+        self.media_artwork: dict[str, tuple[str, bytes, str, str]] = {}
+        self._requested_artwork: dict[str, tuple[str, str, str, str]] = {}
+        self._artwork_retries: dict[str, tuple[tuple[str, str, str, str], int]] = {}
+        self._artwork_retry_unsubs: dict[str, Callable[[], None]] = {}
         self.selected_player: str | None = None
         self.sinks: dict[str, dict[str, Any]] = {}
         self.can_type: bool | None = None
@@ -127,6 +159,12 @@ class KdeConnectDevice:
         self.screen_time: datetime | None = None
         self._listeners: list[Callable[[], None]] = []
         self._command_listeners: list[Callable[[], None]] = []
+        self._notification_listeners: list[Callable[[dict[str, Any]], None]] = []
+        # Notifications we passed on, by id, to report when they go away.
+        self._shared_notifications: dict[str, str] = {}
+        self._desktop_chats = DesktopNotificationChats()
+        self._notification_icon_urls: dict[str, str] = {}
+        self._notification_tokens: dict[str, object] = {}
         # Log a lost connection once, and once when it comes back.
         self._logged_unavailable = False
 
@@ -155,6 +193,7 @@ class KdeConnectDevice:
         def stop() -> None:
             for unsub in unsubs:
                 unsub()
+            self._cancel_artwork_retries()
 
         return stop
 
@@ -171,6 +210,14 @@ class KdeConnectDevice:
         """Call the listener when the device sends a new command list."""
         self._command_listeners.append(listener)
         return lambda: self._command_listeners.remove(listener)
+
+    @callback
+    def async_add_notification_listener(
+        self, listener: Callable[[dict[str, Any]], None]
+    ) -> Callable[[], None]:
+        """Call the listener with every notification the device shares."""
+        self._notification_listeners.append(listener)
+        return lambda: self._notification_listeners.remove(listener)
 
     @callback
     def _notify(self) -> None:
@@ -213,6 +260,9 @@ class KdeConnectDevice:
         else:
             self.locked = None
             self.players = {}
+            self.media_artwork.clear()
+            self._requested_artwork.clear()
+            self._cancel_artwork_retries()
             self.sinks = {}
             self.can_type = None
         self._notify()
@@ -240,9 +290,125 @@ class KdeConnectDevice:
         elif packet.type == PACKET_TYPE_SHARE_REQUEST:
             self._handle_share(packet)
         elif packet.type == PACKET_TYPE_MPRIS:
-            self._handle_mpris(body)
+            self._handle_mpris(packet)
         elif packet.type == PACKET_TYPE_SYSTEMVOLUME:
             self._handle_systemvolume(body)
+        elif packet.type == PACKET_TYPE_NOTIFICATION:
+            self._handle_notification(packet)
+
+    # Notifications the device shares with us
+
+    @callback
+    def _handle_notification(self, packet: Packet) -> None:
+        body = packet.body
+        notification_id = body.get("id")
+        if self.notifications is None or not isinstance(notification_id, str):
+            return
+        source_id = notification_id
+        if body.get("isCancel"):
+            notification_id, keep_chat = self._desktop_chats.remove(source_id)
+            if keep_chat:
+                return
+            self._notification_tokens.pop(notification_id, None)
+            self._notification_icon_urls.pop(notification_id, None)
+            if (
+                app := self._shared_notifications.pop(notification_id, None)
+            ) is not None:
+                self._fire_notification(
+                    {"action": ACTION_REMOVED, "id": notification_id, "app": app}
+                )
+            return
+        app = clean_app_name(body.get("appName"))
+        if self.notifications.async_seen(self.device_id, app):
+            # A new app to choose on the panel.
+            self._notify()
+        silent = body.get("silent") is True
+        if not self.notifications.get(self.device_id).shares(app, silent):
+            return
+        title, text = notification_content(body)
+        if self.device_type in ("desktop", "laptop") and is_chat_notification(
+            app, body
+        ):
+            notification_id, text = self._desktop_chats.add(
+                source_id,
+                app,
+                title,
+                text,
+                complete=isinstance(body.get("conversation"), list)
+                and bool(body["conversation"]),
+            )
+        if self._shared_notifications.get(notification_id) != app:
+            self._notification_icon_urls.pop(notification_id, None)
+        action = (
+            ACTION_UPDATED
+            if self._shared_notifications.get(notification_id) == app
+            else ACTION_ADDED
+        )
+        self._shared_notifications.pop(notification_id, None)
+        self._shared_notifications[notification_id] = app
+        revision = self._notification_tokens[notification_id] = object()
+        while len(self._shared_notifications) > MAX_SHARED:
+            expired_id = next(iter(self._shared_notifications))
+            del self._shared_notifications[expired_id]
+            self._notification_icon_urls.pop(expired_id, None)
+            self._notification_tokens.pop(expired_id, None)
+        data: dict[str, Any] = {
+            "action": action,
+            "id": notification_id,
+            "app": app,
+            "title": title,
+            "text": text,
+            "ticker": _text(body.get("ticker")),
+            "silent": silent,
+            "icon_url": self._notification_icon_urls.get(notification_id),
+        }
+        if notification_id != source_id:
+            data["source_id"] = source_id
+        size, port = packet.payload_size, packet.payload_port
+        if size is not None and port is not None and 0 < size <= MAX_ICON_SIZE:
+            self.entry.async_create_background_task(
+                self.hass,
+                self._async_notification_with_icon(data, port, size, revision),
+                f"{self.name} notification icon",
+            )
+        else:
+            self._fire_notification(data)
+
+    async def _async_notification_with_icon(
+        self, data: dict[str, Any], port: int, size: int, revision: object
+    ) -> None:
+        try:
+            icon = await self.hub.async_download_payload(self.device_id, port, size)
+        except (OSError, TimeoutError) as err:
+            _LOGGER.debug("No icon for a notification of %s: %s", self.name, err)
+        else:
+            if self._notification_tokens.get(data["id"]) is not revision:
+                return
+            token = async_get_icons(self.hass).add(icon)
+            path = f"{ICON_URL}/{token}.png"
+            try:
+                base = get_url(self.hass, prefer_external=False)
+            except NoURLAvailableError:
+                base = ""
+            data["icon_url"] = base + path
+            if data["id"] in self._shared_notifications:
+                self._notification_icon_urls[data["id"]] = data["icon_url"]
+        if self._notification_tokens.get(data["id"]) is revision:
+            self._fire_notification(data)
+
+    @callback
+    def _fire_notification(self, data: dict[str, Any]) -> None:
+        registry_device = dr.async_get(self.hass).async_get_device(
+            identifiers={(DOMAIN, self.device_id)}
+        )
+        data = {
+            "device_id": registry_device.id if registry_device else None,
+            "device_name": self.name,
+            **data,
+        }
+        self.hass.bus.async_fire(EVENT_NOTIFICATION, data)
+        for listener in list(self._notification_listeners):
+            listener(data)
 
     def _handle_share(self, packet: Packet) -> None:
         filename = packet.body.get("filename")
@@ -278,10 +444,24 @@ class KdeConnectDevice:
             return False
         return self.run_command(key)
 
-    def _handle_mpris(self, body: dict[str, Any]) -> None:
+    def _handle_mpris(self, packet: Packet) -> None:
+        body = packet.body
+        if body.get("transferringAlbumArt") is True:
+            self._handle_artwork(packet)
+            return
         if isinstance(names := body.get("playerList"), list):
             names = [name for name in names if isinstance(name, str)]
             self.players = {name: self.players.get(name, {}) for name in names}
+            self.media_artwork = {
+                name: art
+                for name, art in self.media_artwork.items()
+                if name in self.players
+            }
+            self._requested_artwork = {
+                name: request
+                for name, request in self._requested_artwork.items()
+                if name in self.players
+            }
             for name in names:
                 self._send(
                     PACKET_TYPE_MPRIS_REQUEST,
@@ -289,14 +469,152 @@ class KdeConnectDevice:
                 )
         elif isinstance(name := body.get("player"), str) and name in self.players:
             player = self.players[name]
-            player.update(
-                {key: body[key] for key in PLAYER_FIELDS if key in body}
-            )
+            player.update({key: body[key] for key in PLAYER_FIELDS if key in body})
             if "pos" in body:
                 player["posUpdatedAt"] = dt_util.utcnow()
+            if "albumArtUrl" in body:
+                url = body["albumArtUrl"]
+                if name in self.media_artwork and self.media_artwork[name][0] != url:
+                    self.media_artwork.pop(name)
+                if isinstance(url, str) and url.startswith("file://"):
+                    request = (
+                        url,
+                        str(player.get("title", "")),
+                        str(player.get("artist", "")),
+                        str(player.get("album", "")),
+                    )
+                    if self._requested_artwork.get(name) != request:
+                        self._requested_artwork[name] = request
+                        self._send(
+                            PACKET_TYPE_MPRIS_REQUEST,
+                            {"player": name, "albumArtUrl": url},
+                        )
+                else:
+                    self._requested_artwork.pop(name, None)
+                    self._store_inline_artwork(name, url)
         else:
             return
         self._notify()
+
+    def _store_inline_artwork(self, name: str, url: Any) -> None:
+        """Decode artwork that a player embeds as a base64 data: URL."""
+        if not isinstance(url, str) or not url.startswith("data:image/"):
+            return
+        header, _, encoded = url.partition(",")
+        content_type, _, encoding = header[5:].partition(";")
+        if encoding != "base64" or len(encoded) > MAX_ARTWORK_SIZE * 4 // 3 + 4:
+            return
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            return
+        if not data or content_type not in IMAGE_TYPES.values():
+            return
+        self.media_artwork[name] = (
+            url,
+            data,
+            content_type,
+            hashlib.sha256(data).hexdigest()[:16],
+        )
+        while len(self.media_artwork) > MAX_ARTWORK_CACHE:
+            self.media_artwork.pop(next(iter(self.media_artwork)))
+
+    def _handle_artwork(self, packet: Packet) -> None:
+        name, url = packet.body.get("player"), packet.body.get("albumArtUrl")
+        if not isinstance(name, str) or not isinstance(url, str):
+            return
+        request = self._requested_artwork.get(name)
+        if (
+            not request
+            or request[0] != url
+            or self.players.get(name, {}).get("albumArtUrl") != url
+        ):
+            return
+        size, port = packet.payload_size, packet.payload_port
+        if size is None or port is None or not 0 < size <= MAX_ARTWORK_SIZE:
+            return
+        self.entry.async_create_background_task(
+            self.hass,
+            self._async_receive_artwork(name, url, port, size, request),
+            f"{self.name} media artwork",
+        )
+
+    async def _async_receive_artwork(
+        self,
+        name: str,
+        url: str,
+        port: int,
+        size: int,
+        request: tuple[str, str, str, str],
+    ) -> None:
+        try:
+            data = await self.hub.async_download_payload(self.device_id, port, size)
+        except (OSError, TimeoutError) as err:
+            _LOGGER.debug("Could not receive artwork from %s: %s", self.name, err)
+            return
+        if (
+            self.players.get(name, {}).get("albumArtUrl") != url
+            or self._requested_artwork.get(name) != request
+        ):
+            return
+        # Chromium/VacuumTube use extensionless temporary artwork files.
+        # The remote filename does not reliably describe the transferred bytes.
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            content_type = "image/png"
+        elif data.startswith(b"\xff\xd8\xff"):
+            content_type = "image/jpeg"
+        elif data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+            content_type = "image/webp"
+        else:
+            return
+        previous = self.media_artwork.get(name)
+        if previous and previous[0] == url and previous[1] == data:
+            self._schedule_artwork_retry(name, url, request)
+            return
+        self._artwork_retries.pop(name, None)
+        self.media_artwork[name] = (
+            url,
+            data,
+            content_type,
+            hashlib.sha256(data).hexdigest()[:16],
+        )
+        while len(self.media_artwork) > MAX_ARTWORK_CACHE:
+            self.media_artwork.pop(next(iter(self.media_artwork)))
+        self._notify()
+
+    def _schedule_artwork_retry(
+        self, name: str, url: str, request: tuple[str, str, str, str]
+    ) -> None:
+        """Ask again for a reused artwork file that still holds the old image."""
+        previous_request, count = self._artwork_retries.get(name, (request, 0))
+        if previous_request != request:
+            count = 0
+        if count >= ARTWORK_RETRIES:
+            return
+        self._artwork_retries[name] = (request, count + 1)
+        if unsub := self._artwork_retry_unsubs.pop(name, None):
+            unsub()
+
+        @callback
+        def _retry(_now: datetime) -> None:
+            self._artwork_retry_unsubs.pop(name, None)
+            if (
+                self._requested_artwork.get(name) == request
+                and self.players.get(name, {}).get("albumArtUrl") == url
+            ):
+                self._send(
+                    PACKET_TYPE_MPRIS_REQUEST, {"player": name, "albumArtUrl": url}
+                )
+
+        self._artwork_retry_unsubs[name] = async_call_later(
+            self.hass, ARTWORK_RETRY_DELAY, _retry
+        )
+
+    def _cancel_artwork_retries(self) -> None:
+        for unsub in self._artwork_retry_unsubs.values():
+            unsub()
+        self._artwork_retry_unsubs.clear()
+        self._artwork_retries.clear()
 
     def _handle_systemvolume(self, body: dict[str, Any]) -> None:
         if isinstance(sink_list := body.get("sinkList"), list):
@@ -523,6 +841,10 @@ class KdeConnectDevice:
         if (info := self.hub.discovered.get(self.device_id)) and info.host:
             addresses.add(info.host)
         await self.hass.async_add_executor_job(_send_magic_packet, packet, addresses)
+
+
+def _text(value: Any) -> str:
+    return value if isinstance(value, str) else ""
 
 
 def _normal_volume(sink: dict[str, Any]) -> int:
