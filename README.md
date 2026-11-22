@@ -14,7 +14,7 @@ A Home Assistant integration that speaks the [KDE Connect](https://kdeconnect.kd
 
 ## Getting started
 
-You need KDE Connect 23.08 or newer on each computer or phone, on the same network as Home Assistant (UDP 1716 and TCP 1716–1764 open between them).
+You need KDE Connect 23.08 or newer on each computer or phone, on the same network as Home Assistant (UDP 1716 and TCP 1716–1764 open between them, over IPv4 or IPv6).
 
 1. **Install the integration.** Search for **KDE for Home Assistant** in the Marketplace and download it.
 <!-- ha-marketplace:exclude-start -->
@@ -53,7 +53,7 @@ Per device, when you pair it (**Add device** on the sidebar page, or **Pair devi
 | Field | |
 | --- | --- |
 | Device | A KDE Connect device found on your network |
-| Host | Only when the device is not found: its IP address or hostname |
+| Host | Only when the device is not found: its IP address (IPv4 or IPv6) or hostname |
 
 Per device afterwards (**Change device settings**, or the device on the sidebar page):
 
