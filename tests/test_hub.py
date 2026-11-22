@@ -256,6 +256,33 @@ def test_send_on_link_not_ready() -> None:
     link.close()
 
 
+async def test_link_host_is_normalized() -> None:
+    """The link stores the same canonical host that devices show."""
+    transport = MagicMock(spec=asyncio.Transport)
+    transport.get_extra_info.side_effect = lambda name: {
+        "peername": ("::ffff:10.0.0.5", 1234),
+        "socket": None,
+    }.get(name)
+    link = Link(MagicMock())
+    try:
+        link.connection_made(transport)
+        assert link.host == "10.0.0.5"
+    finally:
+        link.connection_lost(None)
+
+    transport = MagicMock(spec=asyncio.Transport)
+    transport.get_extra_info.side_effect = lambda name: {
+        "peername": ("fe80::1", 1234, 0, 3),
+        "socket": None,
+    }.get(name)
+    link = Link(MagicMock())
+    try:
+        link.connection_made(transport)
+        assert link.host == "fe80::1%3"
+    finally:
+        link.connection_lost(None)
+
+
 # Starting and stopping
 
 
@@ -298,10 +325,50 @@ async def test_tcp_falls_back_to_ipv4() -> None:
         await hub.stop()
 
 
+async def test_ipv6_udp_unavailable() -> None:
+    """Keep the IPv4 UDP socket when IPv6 is not available."""
+    hub = _new_hub()
+    open_udp = hub._open_udp
+
+    async def guarded(family: int, address: str):
+        if family == socket.AF_INET6:
+            raise OSError(errno.EADDRNOTAVAIL, "no IPv6")
+        return await open_udp(family, address)
+
+    with patch.object(hub, "_open_udp", side_effect=guarded):
+        await hub.start()
+    try:
+        assert hub._udp4 is not None
+        assert hub._udp6 is None
+    finally:
+        await hub.stop()
+
+
 async def test_udp_port_in_use() -> None:
     """Starting fails, and cleans up, when the UDP port is taken."""
     taken = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     taken.bind(("0.0.0.0", 0))
+    hub = _new_hub(udp_port=taken.getsockname()[1])
+    try:
+        with pytest.raises(OSError):
+            await hub.start()
+        assert hub._server is None
+        assert hub._udp4 is None
+        assert hub._udp6 is None
+    finally:
+        taken.close()
+
+
+async def test_ipv6_udp_port_in_use() -> None:
+    """A taken IPv6 UDP port also fails and cleans up."""
+    if not socket.has_ipv6:
+        pytest.skip("IPv6 is not available")
+    taken = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    try:
+        taken.bind(("::1", 0))
+    except OSError:
+        taken.close()
+        pytest.skip("IPv6 is not available")
     hub = _new_hub(udp_port=taken.getsockname()[1])
     try:
         with pytest.raises(OSError):
@@ -340,6 +407,7 @@ async def test_announce(hub: KdeConnectHub) -> None:
     """Announcing does nothing before start, and survives send errors."""
     _new_hub().announce(["127.0.0.1"])
     hub.announce(["127.0.0.1"])
+    hub.announce([None])
     with patch.object(hub._udp4, "sendto", side_effect=OSError("unreachable")):
         hub.announce(["127.0.0.1"])
 
@@ -353,7 +421,14 @@ async def test_announce_uses_address_family(hub: KdeConnectHub) -> None:
         patch.object(hub._udp6, "sendto") as send6,
     ):
         hub.announce(
-            ["10.0.0.5", "::ffff:10.0.0.6", "2001:db8::7", "fe80::1%eth0", "pc.local"]
+            [
+                "10.0.0.5",
+                "::ffff:10.0.0.6",
+                "2001:db8::7",
+                "fe80::1%eth0",
+                "[2001:db8::8]",
+                "pc.local",
+            ]
         )
     assert [args[0][1] for args in send4.call_args_list] == [
         ("10.0.0.5", UDP_PORT),
@@ -363,6 +438,7 @@ async def test_announce_uses_address_family(hub: KdeConnectHub) -> None:
     assert [args[0][1] for args in send6.call_args_list] == [
         ("2001:db8::7", UDP_PORT),
         ("fe80::1%eth0", UDP_PORT),
+        ("2001:db8::8", UDP_PORT),
     ]
 
 
@@ -374,6 +450,20 @@ async def test_announce_skips_missing_ipv6(hub: KdeConnectHub) -> None:
     ):
         hub.announce(["2001:db8::1"])
     send4.assert_not_called()
+
+
+async def test_announce_hostname_falls_back_to_ipv6(hub: KdeConnectHub) -> None:
+    """A hostname goes to IPv4 first and falls back to IPv6 when that fails."""
+    if not socket.has_ipv6 or hub._udp6 is None:
+        pytest.skip("IPv6 is not available")
+    with (
+        patch.object(hub._udp4, "sendto", side_effect=socket.gaierror("no A")) as send4,
+        patch.object(hub._udp6, "sendto") as send6,
+    ):
+        hub.announce(["v6.example"])
+    send4.assert_called_once()
+    send6.assert_called_once()
+    assert send6.call_args.args[1] == ("v6.example", UDP_PORT)
 
 
 # Discovery

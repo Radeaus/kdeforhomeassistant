@@ -95,7 +95,7 @@ class Link(asyncio.Protocol):
         assert isinstance(transport, asyncio.Transport)
         self._transport = transport
         peer = transport.get_extra_info("peername")
-        self._host = _format_address(peer) if peer else None
+        self._host = normalize_host(_format_address(peer)) if peer else None
         sock = transport.get_extra_info("socket")
         if sock is not None:
             _enable_keepalive(sock)
@@ -419,22 +419,32 @@ class KdeConnectHub:
 
     # Discovery
 
-    def announce(self, hosts: Iterable[str]) -> None:
+    def announce(self, hosts: Iterable[str | None]) -> None:
         """Send our identity so the devices at these addresses connect to us."""
         data = self.identity_packet().serialize()
         for host in hosts:
             normalized = normalize_host(host)
             if normalized is None:
                 continue
-            transport = (
-                self._udp6 if _address_version(normalized) == 6 else self._udp4
-            )
-            if transport is None:
-                continue
-            try:
-                transport.sendto(data, (normalized, UDP_PORT))
-            except OSError as err:
-                _LOGGER.debug("Could not announce to %s: %s", host, err)
+            version = _address_version(normalized)
+            if version == 6:
+                transports = (self._udp6,)
+            elif version == 4:
+                transports = (self._udp4,)
+            else:
+                transports = (self._udp4, self._udp6)
+            error: OSError | None = None
+            for transport in transports:
+                if transport is None:
+                    continue
+                try:
+                    transport.sendto(data, (normalized, UDP_PORT))
+                    break
+                except OSError as err:
+                    error = err
+            else:
+                if error is not None:
+                    _LOGGER.debug("Could not announce to %s: %s", host, error)
 
     def start_discovery(self) -> Callable[[], None]:
         """Also answer untrusted devices until the returned callable is called."""

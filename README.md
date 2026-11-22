@@ -14,7 +14,7 @@ A Home Assistant integration that speaks the [KDE Connect](https://kdeconnect.kd
 
 ## Getting started
 
-You need KDE Connect 23.08 or newer on each computer or phone, on the same network as Home Assistant (UDP 1716 and TCP 1716–1764 open between them, over IPv4 or IPv6). Home Assistant advertises itself over mDNS (DNS-SD), so devices also find it on networks without IPv4.
+You need KDE Connect 23.08 or newer on each computer or phone, on the same network as Home Assistant (UDP 1716 and TCP 1716–1764 open between them, over IPv4 or IPv6). Home Assistant both advertises and browses for `_kdeconnect._udp` (DNS-SD), so discovery and reconnects work on IPv4 and IPv6 networks.
 
 1. **Install the integration.** Search for **KDE for Home Assistant** in the Marketplace and download it.
 <!-- ha-marketplace:exclude-start -->
