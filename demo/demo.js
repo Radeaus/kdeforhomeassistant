@@ -515,7 +515,7 @@ const SCRIPTS = {
 };
 
 const DISCOVERED = [
-  { name: "Gaming PC", type: "desktop", host: "192.168.1.42", delay: 900 },
+  { name: "Gaming PC", type: "desktop", host: "fd00::42", delay: 900 },
   { name: "Kitchen tablet", type: "tablet", host: "192.168.1.57", delay: 2200 },
   { name: "Robin's laptop", type: "laptop", host: "192.168.1.73", delay: 3600 },
 ];
