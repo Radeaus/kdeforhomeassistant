@@ -43,6 +43,7 @@ from .device import KdeConnectDevice
 from .kdeconnect import Identity, KdeConnectHub
 from .kdeconnect.protocol import UDP_PORT
 from .legacy import async_check_legacy_issue
+from .mdns import KdeConnectMdns
 from .panel import async_register_panel, async_remove_panel
 from .websocket import async_register_websocket_commands
 
@@ -122,6 +123,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: KdeConnectConfigEntry) -
             translation_key="port_in_use",
             translation_placeholders={"error": str(err)},
         ) from err
+
+    mdns = KdeConnectMdns(hass, hub)
+    await mdns.async_start()
+    entry.async_on_unload(mdns.async_stop)
 
     devices = {
         subentry.subentry_id: KdeConnectDevice(hass, entry, subentry, hub)

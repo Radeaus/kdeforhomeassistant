@@ -19,7 +19,8 @@
   "dependencies": [
     "http",
     "network",
-    "websocket_api"
+    "websocket_api",
+    "zeroconf"
   ],
   "documentation": "https://github.com/Radeaus/kdeforhomeassistant",
   "integration_type": "hub",
