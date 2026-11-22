@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import ipaddress
 import json
 import re
 import time
@@ -119,6 +120,24 @@ def filter_device_name(name: Any) -> str:
     return _INVALID_NAME_CHARS_RE.sub("", name).strip()[:32]
 
 
+def normalize_host(host: str | None) -> str | None:
+    """Return a canonical host: strip brackets and IPv4-mapped IPv6 prefixes."""
+    if host is None:
+        return None
+    value = host.strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    address, _, scope = value.partition("%")
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return value
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped:
+        return str(parsed.ipv4_mapped)
+    normalized = str(parsed)
+    return f"{normalized}%{scope}" if scope else normalized
+
+
 @dataclass(slots=True)
 class DeviceInfo:
     """What a peer told us about itself."""
@@ -131,6 +150,9 @@ class DeviceInfo:
     outgoing_capabilities: frozenset[str] = frozenset()
     host: str | None = None
     tcp_port: int | None = None
+
+    def __post_init__(self) -> None:
+        self.host = normalize_host(self.host)
 
     @classmethod
     def from_identity(cls, packet: Packet, host: str | None = None) -> DeviceInfo:

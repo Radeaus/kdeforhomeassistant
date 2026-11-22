@@ -45,6 +45,13 @@ PacketListener = Callable[[Packet], None]
 ConnectionListener = Callable[[bool], None]
 
 
+def _format_address(addr: tuple[str | int, ...]) -> str:
+    host = str(addr[0])
+    if len(addr) > 3 and addr[3]:
+        return f"{host}%{addr[3]}"
+    return host
+
+
 class PairingError(Exception):
     """Pairing did not succeed; the message is a short reason code."""
 
@@ -77,7 +84,7 @@ class Link(asyncio.Protocol):
         assert isinstance(transport, asyncio.Transport)
         self._transport = transport
         peer = transport.get_extra_info("peername")
-        self._host = peer[0] if peer else None
+        self._host = _format_address(peer) if peer else None
         sock = transport.get_extra_info("socket")
         if sock is not None:
             _enable_keepalive(sock)
@@ -208,7 +215,7 @@ class _Discovery(asyncio.DatagramProtocol):
             packet = Packet.parse(data)
             if packet.type != PACKET_TYPE_IDENTITY:
                 return
-            info = DeviceInfo.from_identity(packet, str(addr[0]))
+            info = DeviceInfo.from_identity(packet, _format_address(addr))
         except ProtocolError:
             return
         self._hub._identity_received(info)

@@ -21,6 +21,7 @@ from custom_components.kdeforhomeassistant.kdeconnect.hub import (
     Link,
     PairingError,
     _Discovery,
+    _format_address,
 )
 from custom_components.kdeforhomeassistant.kdeconnect.protocol import (
     PACKET_TYPE_IDENTITY,
@@ -311,6 +312,26 @@ async def test_datagrams(hub: KdeConnectHub) -> None:
     assert hub.discovered == {}
     discovery.datagram_received(good, addr)
     assert hub.discovered["b" * 32].host == "10.0.0.5"
+
+
+def test_format_address() -> None:
+    """IPv6 scope ids are appended; IPv4 addresses are unchanged."""
+    assert _format_address(("10.0.0.5", 1716)) == "10.0.0.5"
+    assert _format_address(("fe80::1", 1716, 0, 3)) == "fe80::1%3"
+    assert _format_address(("fe80::1", 1716, 0, 0)) == "fe80::1"
+
+
+async def test_datagram_addresses(hub: KdeConnectHub) -> None:
+    """Mapped IPv4 senders become IPv4 and IPv6 scopes are preserved."""
+    discovery = _Discovery(hub)
+    discovery.datagram_received(
+        _identity_line("b" * 32), ("::ffff:10.0.0.5", 1716, 0, 0)
+    )
+    assert hub.discovered["b" * 32].host == "10.0.0.5"
+    discovery.datagram_received(
+        _identity_line("c" * 32), ("fe80::1", 1716, 0, 3)
+    )
+    assert hub.discovered["c" * 32].host == "fe80::1%3"
 
 
 async def test_real_datagram(hub: KdeConnectHub) -> None:

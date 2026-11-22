@@ -72,6 +72,7 @@ from .kdeconnect.protocol import (
     der_to_pem,
     filter_device_name,
     is_valid_device_id,
+    normalize_host,
     pem_to_der,
 )
 
@@ -402,7 +403,7 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Reach a device by its address when discovery does not find it."""
         if user_input is not None:
-            self._host = user_input[CONF_HOST].strip()
+            self._host = normalize_host(user_input[CONF_HOST])
             self._device_id = None
             return await self.async_step_connect()
         return self.async_show_form(
