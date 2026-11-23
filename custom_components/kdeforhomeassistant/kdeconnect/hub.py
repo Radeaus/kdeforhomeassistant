@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
+import ipaddress
 import logging
 import os
 import socket
@@ -30,6 +32,7 @@ from .protocol import (
     Packet,
     ProtocolError,
     certificate_common_name,
+    normalize_host,
     verification_key,
 )
 
@@ -43,6 +46,21 @@ ANSWER_INTERVAL = 5
 
 PacketListener = Callable[[Packet], None]
 ConnectionListener = Callable[[bool], None]
+
+
+def _format_address(addr: tuple[str | int, ...]) -> str:
+    host = str(addr[0])
+    if len(addr) > 3 and addr[3]:
+        return f"{host}%{addr[3]}"
+    return host
+
+
+def _address_version(host: str) -> int | None:
+    """Return 4 or 6 for an IP literal, or None for a hostname."""
+    try:
+        return ipaddress.ip_address(host.split("%", 1)[0]).version
+    except ValueError:
+        return None
 
 
 class PairingError(Exception):
@@ -77,7 +95,7 @@ class Link(asyncio.Protocol):
         assert isinstance(transport, asyncio.Transport)
         self._transport = transport
         peer = transport.get_extra_info("peername")
-        self._host = peer[0] if peer else None
+        self._host = normalize_host(_format_address(peer)) if peer else None
         sock = transport.get_extra_info("socket")
         if sock is not None:
             _enable_keepalive(sock)
@@ -208,7 +226,7 @@ class _Discovery(asyncio.DatagramProtocol):
             packet = Packet.parse(data)
             if packet.type != PACKET_TYPE_IDENTITY:
                 return
-            info = DeviceInfo.from_identity(packet, str(addr[0]))
+            info = DeviceInfo.from_identity(packet, _format_address(addr))
         except ProtocolError:
             return
         self._hub._identity_received(info)
@@ -272,7 +290,8 @@ class KdeConnectHub:
         self.tcp_port: int | None = None
         self.ssl_context: ssl.SSLContext | None = None
         self._server: asyncio.Server | None = None
-        self._udp: asyncio.DatagramTransport | None = None
+        self._udp4: asyncio.DatagramTransport | None = None
+        self._udp6: asyncio.DatagramTransport | None = None
         self._trusted: dict[str, bytes] = {}
         self._links: dict[str, Link] = {}
         self._pairings: dict[str, PendingPairing] = {}
@@ -295,28 +314,44 @@ class KdeConnectHub:
         for port in range(MIN_TCP_PORT, MAX_TCP_PORT + 1):
             try:
                 self._server = await loop.create_server(
-                    lambda: Link(self), host="0.0.0.0", port=port
+                    lambda: Link(self), host=None, port=port
                 )
             except OSError as err:
-                last_error = err
-                continue
-            self.tcp_port = port
+                try:
+                    self._server = await loop.create_server(
+                        lambda: Link(self), host="0.0.0.0", port=port
+                    )
+                except OSError:
+                    last_error = err
+                    continue
+                _LOGGER.debug(
+                    "Dual-stack binding failed; listening on IPv4 only: %s", err
+                )
+            self.tcp_port = self._server.sockets[0].getsockname()[1]
             break
         else:
             raise OSError(
                 f"No free TCP port between {MIN_TCP_PORT} and {MAX_TCP_PORT}"
             ) from last_error
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            sock.bind(("0.0.0.0", self._udp_port))
+            self._udp4 = await self._open_udp(socket.AF_INET, "0.0.0.0")
         except OSError:
-            sock.close()
             await self.stop()
             raise
-        self._udp, _ = await loop.create_datagram_endpoint(
-            lambda: _Discovery(self), sock=sock
-        )
+        try:
+            self._udp6 = await self._open_udp(socket.AF_INET6, "::")
+        except OSError as err:
+            if err.errno in (
+                errno.EAFNOSUPPORT,
+                errno.EADDRNOTAVAIL,
+                errno.EPROTONOSUPPORT,
+                errno.ENOPROTOOPT,
+            ):
+                self._udp6 = None
+                _LOGGER.debug("IPv6 UDP is not available: %s", err)
+            else:
+                await self.stop()
+                raise
         _LOGGER.debug(
             "Listening as %s on TCP %s and UDP %s",
             self.identity.device_id,
@@ -324,14 +359,37 @@ class KdeConnectHub:
             self._udp_port,
         )
 
+    async def _open_udp(
+        self, family: int, address: str
+    ) -> asyncio.DatagramTransport:
+        """Open a UDP discovery socket for one address family."""
+        loop = asyncio.get_running_loop()
+        sock = socket.socket(family, socket.SOCK_DGRAM)
+        try:
+            if family == socket.AF_INET:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            else:
+                sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            sock.bind((address, self._udp_port))
+        except OSError:
+            sock.close()
+            raise
+        transport, _ = await loop.create_datagram_endpoint(
+            lambda: _Discovery(self), sock=sock
+        )
+        return transport
+
     async def stop(self) -> None:
         """Close every connection and socket."""
         for link in list(self._links.values()):
             link.close()
         self._links.clear()
-        if self._udp is not None:
-            self._udp.close()
-            self._udp = None
+        if self._udp4 is not None:
+            self._udp4.close()
+            self._udp4 = None
+        if self._udp6 is not None:
+            self._udp6.close()
+            self._udp6 = None
         if self._server is not None:
             self._server.close()
             with contextlib.suppress(Exception):
@@ -361,16 +419,32 @@ class KdeConnectHub:
 
     # Discovery
 
-    def announce(self, hosts: Iterable[str]) -> None:
+    def announce(self, hosts: Iterable[str | None]) -> None:
         """Send our identity so the devices at these addresses connect to us."""
-        if self._udp is None:
-            return
         data = self.identity_packet().serialize()
         for host in hosts:
-            try:
-                self._udp.sendto(data, (host, UDP_PORT))
-            except OSError as err:
-                _LOGGER.debug("Could not announce to %s: %s", host, err)
+            normalized = normalize_host(host)
+            if normalized is None:
+                continue
+            version = _address_version(normalized)
+            if version == 6:
+                transports = (self._udp6,)
+            elif version == 4:
+                transports = (self._udp4,)
+            else:
+                transports = (self._udp4, self._udp6)
+            error: OSError | None = None
+            for transport in transports:
+                if transport is None:
+                    continue
+                try:
+                    transport.sendto(data, (normalized, UDP_PORT))
+                    break
+                except OSError as err:
+                    error = err
+            else:
+                if error is not None:
+                    _LOGGER.debug("Could not announce to %s: %s", host, error)
 
     def start_discovery(self) -> Callable[[], None]:
         """Also answer untrusted devices until the returned callable is called."""

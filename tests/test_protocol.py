@@ -13,6 +13,7 @@ from custom_components.kdeforhomeassistant.kdeconnect.protocol import (
     certificate_fingerprint,
     filter_device_name,
     generate_identity,
+    normalize_host,
 )
 
 DEVICE_ID = "a" * 32
@@ -49,6 +50,27 @@ def test_filter_device_name() -> None:
     assert filter_device_name(None) == ""
     assert filter_device_name(" Jan's (PC)! ") == "Jans PC"
     assert filter_device_name("x" * 40) == "x" * 32
+
+
+def test_normalize_host() -> None:
+    """IPv4-mapped IPv6 addresses become IPv4; everything else is kept."""
+    assert normalize_host(None) is None
+    assert normalize_host("::ffff:192.0.2.5") == "192.0.2.5"
+    assert normalize_host("192.0.2.5") == "192.0.2.5"
+    assert normalize_host("2001:db8::1") == "2001:db8::1"
+    assert normalize_host("fe80::1%3") == "fe80::1%3"
+    assert normalize_host("example.local") == "example.local"
+    assert normalize_host("[2001:db8::1]") == "2001:db8::1"
+    assert normalize_host("[::ffff:192.0.2.5]") == "192.0.2.5"
+    assert normalize_host("[fe80::1%3]") == "fe80::1%3"
+    assert normalize_host(" 2001:DB8::1 ") == "2001:db8::1"
+
+
+def test_device_info_normalizes_host() -> None:
+    """DeviceInfo stores the normalized host."""
+    assert DeviceInfo("a" * 32, "PC", host="::ffff:192.0.2.5").host == "192.0.2.5"
+    assert DeviceInfo("a" * 32, "PC", host="fe80::1%3").host == "fe80::1%3"
+    assert DeviceInfo("a" * 32, "PC", host="example.local").host == "example.local"
 
 
 def test_from_identity_rejects() -> None:

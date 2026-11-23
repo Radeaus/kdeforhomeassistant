@@ -37,7 +37,7 @@ from .const import (
 from .commands import parse_command
 from .device import OWN_COMMAND_NAMES, read_mac_address
 from .kdeconnect import DeviceInfo, PairingError
-from .kdeconnect.protocol import der_to_pem, filter_device_name
+from .kdeconnect.protocol import der_to_pem, filter_device_name, normalize_host
 
 if TYPE_CHECKING:
     from . import KdeConnectConfigEntry
@@ -346,7 +346,7 @@ async def ws_connect(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
 ) -> None:
     """Ask the device at an address to connect, and return its id."""
-    host = msg["host"].strip()
+    host = normalize_host(msg["host"])
     loop = asyncio.get_running_loop()
     deadline = loop.time() + CONNECT_TIMEOUT
     while loop.time() < deadline:

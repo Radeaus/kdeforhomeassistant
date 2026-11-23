@@ -87,14 +87,14 @@ class FakeDevice:
         os.unlink(path)
         return context
 
-    async def connect(self, port: int) -> None:
+    async def connect(self, port: int, host: str = "127.0.0.1") -> None:
         """Connect to the hub the way KDE Connect does after a UDP announce."""
         loop = asyncio.get_running_loop()
         protocol = _PeerProtocol(self)
         self.transport = None
         self._pending: list[Packet] = []
         context = await loop.run_in_executor(None, self._server_context)
-        transport, _ = await loop.create_connection(lambda: protocol, "127.0.0.1", port)
+        transport, _ = await loop.create_connection(lambda: protocol, host, port)
         transport.write(self._identity_packet().serialize())
         self.transport = await loop.start_tls(
             transport, protocol, context, server_side=True
