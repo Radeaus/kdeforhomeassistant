@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.kdeforhomeassistant.const import DOMAIN
 from custom_components.kdeforhomeassistant.notifications import (
@@ -61,8 +62,7 @@ async def test_choose_apps_per_device(hass: HomeAssistant, hass_ws_client) -> No
     desk.close()
     await desk.connect(entry.runtime_data.hub.tcp_port)
     await _settle(hass)
-    events = []
-    hass.bus.async_listen(EVENT_NOTIFICATION, events.append)
+    events = async_capture_events(hass, EVENT_NOTIFICATION)
     ws = await hass_ws_client(hass)
 
     # Off until the user turns it on, but the app is listed to choose.
@@ -182,8 +182,7 @@ async def test_notification_icon(hass: HomeAssistant, hass_client_no_auth) -> No
     entry.runtime_data.notifications.async_update(
         subentry.data["device_id"], enabled=True
     )
-    events = []
-    hass.bus.async_listen(EVENT_NOTIFICATION, events.append)
+    events = async_capture_events(hass, EVENT_NOTIFICATION)
 
     await device.notify_with_icon(PNG, id="1", appName="Mail", title="New mail")
     await _settle(hass)
@@ -340,8 +339,7 @@ async def test_conversation_packet_updates(hass: HomeAssistant) -> None:
     entry.runtime_data.notifications.async_update(
         subentry.data["device_id"], enabled=True
     )
-    events = []
-    hass.bus.async_listen(EVENT_NOTIFICATION, events.append)
+    events = async_capture_events(hass, EVENT_NOTIFICATION)
     messages = [{"sender": "Ann", "content": "First"}]
     device.notify(
         id="chat-1",
@@ -389,8 +387,7 @@ async def test_late_icon_cannot_restore_an_old_notification(
         return PNG
 
     entry.runtime_data.hub.async_download_payload = delayed
-    events = []
-    hass.bus.async_listen(EVENT_NOTIFICATION, events.append)
+    events = async_capture_events(hass, EVENT_NOTIFICATION)
     device._handle_notification(
         Packet(
             "kdeconnect.notification",
@@ -428,8 +425,7 @@ async def test_timed_out_icon_still_delivers_text(hass: HomeAssistant) -> None:
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     device = entry.runtime_data.devices[_subentry_id(entry, "Phone")]
     entry.runtime_data.notifications.async_update(device.device_id, enabled=True)
-    events = []
-    hass.bus.async_listen(EVENT_NOTIFICATION, events.append)
+    events = async_capture_events(hass, EVENT_NOTIFICATION)
 
     async def timeout(*args, **kwargs):
         raise TimeoutError

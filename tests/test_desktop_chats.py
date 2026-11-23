@@ -3,6 +3,7 @@
 import asyncio
 
 from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.kdeforhomeassistant.const import DOMAIN
 from custom_components.kdeforhomeassistant.notifications import (
@@ -111,8 +112,7 @@ async def test_desktop_chat_packets_update_one_notification(hass: HomeAssistant)
     await peer.connect(entry.runtime_data.hub.tcp_port)
     await _settle(hass)
     entry.runtime_data.notifications.async_update(peer.identity.device_id, enabled=True)
-    events = []
-    hass.bus.async_listen(EVENT_NOTIFICATION, events.append)
+    events = async_capture_events(hass, EVENT_NOTIFICATION)
     peer.notify(id="first", appName="Telegram Desktop", title="Alice", text="First")
     await _settle(hass)
     peer.notify(id="second", appName="Telegram Desktop", title="Alice", text="Second")
@@ -141,8 +141,7 @@ async def test_phone_packets_are_not_accumulated(hass: HomeAssistant):
     await peer.connect(entry.runtime_data.hub.tcp_port)
     await _settle(hass)
     entry.runtime_data.notifications.async_update(peer.identity.device_id, enabled=True)
-    events = []
-    hass.bus.async_listen(EVENT_NOTIFICATION, events.append)
+    events = async_capture_events(hass, EVENT_NOTIFICATION)
     peer.notify(id="first", appName="Telegram", title="Alice", text="First")
     peer.notify(id="second", appName="Telegram", title="Alice", text="Second")
     await _settle(hass)
