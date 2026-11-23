@@ -2,21 +2,42 @@
 
 # KDE for Home Assistant
 
-A Home Assistant integration that speaks the [KDE Connect](https://kdeconnect.kde.org/) protocol. Home Assistant joins your network as a regular KDE Connect device, so your PCs and phones only need the normal KDE Connect app.
+This integration connects Home Assistant to your computers and phones through [KDE Connect](https://kdeconnect.kde.org/), an open-source app for linking devices on your network. Home Assistant joins the network as a regular KDE Connect device, so your devices only need the normal app.
+
+You can use it to:
+
+- Wake a computer and unlock its screen when you get home.
+- Show a notification on your phone or desktop.
+- Control the music or volume of a computer from a dashboard.
+- Use a computer or TV box from Home Assistant with a remote, touchpad, and keyboard.
+- Start a Home Assistant script from the KDE Connect app.
 
 <p align="center">
   <a href="https://radeaus.github.io/kdeforhomeassistant/"><img src="https://img.shields.io/badge/%E2%96%B6%20Try%20the%20demo-in%20your%20browser-009ac7?style=for-the-badge" alt="Try the demo in your browser" height="36"></a>
 </p>
 
-**[Try the demo](https://radeaus.github.io/kdeforhomeassistant/)** before you install. It is the real sidebar page with made-up devices, so you can click through the setup wizard, pair a device, run commands and lock a screen without Home Assistant or KDE Connect. Nothing in the demo connects to a real device.
-
 [![The KDE for Home Assistant page in the demo](https://raw.githubusercontent.com/Radeaus/kdeforhomeassistant/main/assets/demo.png)](https://radeaus.github.io/kdeforhomeassistant/)
 
-## Getting started
+The [demo](https://radeaus.github.io/kdeforhomeassistant/) is the real sidebar page with made-up devices. It needs no Home Assistant or KDE Connect and connects to nothing.
 
-You need KDE Connect 23.08 or newer on each computer or phone, on the same network as Home Assistant (UDP 1716 and TCP 1716–1764 open between them).
+## Supported devices
 
-1. **Install the integration.** Search for **KDE for Home Assistant** in the Marketplace and download it.
+Any device that runs KDE Connect 23.08 or newer. What the remote can do depends on the device:
+
+- **Linux** (KDE Plasma, Plasma Bigscreen, GNOME with GSConnect, X11 desktops): keys, text, and mouse.
+- **Windows and macOS**: keys, text, and mouse.
+- **Android and Android TV**: clicks, scrolling, and the Android buttons. Keys work only while the KDE Connect keyboard is active.
+
+## Prerequisites
+
+1. Install [KDE Connect](https://kdeconnect.kde.org/download.html) on each computer or phone.
+2. Put those devices on the same network as Home Assistant, with UDP port 1716 and TCP ports 1716-1764 open between them. IPv4 and IPv6 both work.
+
+Home Assistant and the devices find each other with a UDP broadcast over IPv4, and with mDNS (the `_kdeconnect._udp` service) over IPv4 and IPv6. With Home Assistant Container, use host networking, because neither crosses the Docker network.
+
+## Installation
+
+1. Search for **KDE for Home Assistant** in the Marketplace and download it.
 <!-- ha-marketplace:exclude-start -->
    Or open it in your Home Assistant directly:
 
@@ -24,170 +45,127 @@ You need KDE Connect 23.08 or newer on each computer or phone, on the same netwo
 
    Without the Marketplace: copy `custom_components/kdeforhomeassistant` into your `custom_components` folder.
 <!-- ha-marketplace:exclude-end -->
-2. **Restart Home Assistant** if it asks for it.
-3. **Add the integration.** Go to **Settings > Devices & services > Add integration** and choose **KDE for Home Assistant**. Home Assistant now shows up on your network as "*your home name* - Home Assistant".
-4. **Add a device.** Open **KDE for Home Assistant** in the sidebar and select **Add device**. The wizard walks you through it: name Home Assistant, open KDE Connect on the device, choose the device, accept the pairing request, then pick buttons, scripts and Wake-on-LAN.
-5. **Repeat step 4** for every other computer or phone.
+2. Restart Home Assistant if it asks you to.
 
-Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Both use the same network ports, so only one can run. Step 3 asks whether to **disable** or **remove** the older integration, and then offers to take over its pairings, so your devices stay paired.
+## Configuration
 
-You can also select **Pair** in KDE Connect on the device. Home Assistant shows the request in the sidebar and as a notification; accept it within 30 seconds.
+1. Go to **Settings** > **Devices & services** > **Add integration** and select **KDE for Home Assistant**. Your devices now see Home Assistant as "_your home name_ - Home Assistant".
+2. Open **KDE for Home Assistant** in the sidebar and select **Add device**. The wizard walks you through naming Home Assistant, choosing the device, accepting the pairing request, and picking buttons, scripts, and Wake-on-LAN.
+3. Repeat step 2 for every other computer or phone.
 
-## Settings
+You can also select **Pair** in KDE Connect on the device. Home Assistant shows the request in the sidebar and as a notification. Accept it within 30 seconds.
 
-When you add the integration:
+Coming from [bartv2/kde_connect](https://github.com/bartv2/kde_connect)? Both integrations use the same ports, so only one can run. Step 1 asks whether to disable or remove the older one, and offers to take over its pairings so your devices stay paired.
 
-| Field | |
+## Configuration options
+
+- **Name**: the name your devices show for Home Assistant. Change it under **Configure** on the integration, or **Settings** on the sidebar page. During setup it is asked only when you take over pairings.
+- **Device**: when pairing, a KDE Connect device found on your network.
+- **Host**: when pairing, the IP address (IPv4 or IPv6) or hostname of a device that is not found.
+- **MAC address**: per device, needed for Wake-on-LAN. Leave it empty to hide the **Wake up** button.
+- **Scripts the device can run**: per device, the Home Assistant scripts that show up under **Run command** in KDE Connect.
+
+Change the last two under **Change device settings** or on the sidebar page.
+
+## Supported functionality
+
+Each paired device gets these entities, if it offers the feature:
+
+- **Connected** (binary sensor): whether the device is connected.
+- **Screen** (lock): locks or unlocks the screen and shows its state.
+- Notify entity, named after the device: shows a notification with a title and message.
+- **Notification** (event): a notification the device shares with Home Assistant was added, updated, or removed. See [Notifications from devices](#notifications-from-devices).
+- **Media** (media player): shows what plays, with title, artist, album, and position. Controls play, pause, stop, next, previous, seek, the active player, and the volume. Mute works when the device shares its system volume.
+- **Remote** (remote): sends keys, text, and mouse actions. Turning it on wakes the device.
+- **Keyboard** (text): types what you enter on the device, up to 255 characters.
+- **Screen** (image): the latest screenshot of the device.
+- **Ring** (button): plays the find-my-device sound.
+- **Wake up** (button): sends a Wake-on-LAN packet. Needs a MAC address.
+- A button per run command, named after it: runs a command set up in KDE Connect on the device.
+
+### Sidebar page
+
+Per device, you can run and add commands, remove a command button or bring it back, share scripts, set the MAC address, and remove the device.
+
+**Remote** opens arrow buttons, a touchpad (tap to select), and a text field. The first time, the device may ask for permission: a "remote control" prompt on Plasma and GNOME (Wayland), the Accessibility permission on macOS, or the KDE Connect accessibility service on Android.
+
+On a computer, **Help me make buttons** writes a prompt for any AI chat from your Linux distribution and the buttons you want. The answer can include a file to load with **Import** under **Run commands** in KDE Connect. Importing replaces the commands already there.
+
+### Screen
+
+Home Assistant can show a screenshot of a computer, which you refresh by hand. The computer takes it with a run command and sends it through KDE Connect.
+
+1. On the sidebar page, open **Remote** and pick the desktop under **Screen**. The page shows the command to add, using the screenshot tool of KDE Plasma or Cinnamon.
+2. On the computer, go to KDE Connect > **Run command** and add it as a command named `Screenshot` or `Schermafbeelding`.
+3. Select **Refresh** in the remote, or press the **Screenshot** button entity.
+
+### Notifications from devices
+
+Phones and computers can share their notifications with Home Assistant through KDE Connect. Sharing is off until you turn it on per device.
+
+1. In KDE Connect on the device, turn on notification sync for Home Assistant. On Android, open Home Assistant in KDE Connect, go to **Plugin settings** > **Notification sync**, and allow notification access. On Linux, enable **Send notifications** for Home Assistant.
+2. On the sidebar page, open the device and turn on **Share notifications** under **Notifications**.
+3. Each app shows up under **Apps** after its first notification. Turn apps on or off per device. If the same app sends notifications from your phone and your computer, turn it off on one of them. **Share apps not seen before** sets what happens with new apps.
+
+Silent notifications are skipped unless you turn on **Include silent notifications**.
+
+Every shared notification fires a `kdeforhomeassistant_notification` event and updates the **Notification** entity of the device:
+
+| Field | Description |
 | --- | --- |
-| Take over existing pairings / Start fresh | Only shown when the older KDE Connect integration was installed. *Take over* keeps its devices paired |
-| Name | Only when you take over pairings: the name your devices show for Home Assistant. Otherwise Home Assistant uses "*your home name* - Home Assistant" |
+| `action` | `added`, `updated`, or `removed` |
+| `device_id`, `device_name` | The Home Assistant device it came from |
+| `id` | The id of the notification on the device, or a chat id for joined chat messages |
+| `source_id` | The id on the device, when chat messages are joined |
+| `app`, `title`, `text`, `ticker` | The content. A `removed` event only has `app` |
+| `silent` | Whether the device posted it silently |
+| `icon_url` | The image of the notification, when the device sent one |
 
-Under **Configure** on the integration (or *Settings* on the sidebar page):
+On a computer, chat apps such as Telegram, Signal, Discord, and WhatsApp send one notification per message. Messages from the same app and chat are joined into one notification: each new message updates it and is added to its text. The text starts again after five minutes without messages.
 
-| Option | |
-| --- | --- |
-| Name | The name your devices show for Home Assistant |
+Good to know:
 
-Per device, when you pair it (**Add device** on the sidebar page, or **Pair device** on the integration):
+- When notification sync is on, the device sends every notification to Home Assistant. Home Assistant drops the ones you don't share, but remembers the app names so you can choose them.
+- The text of shared notifications ends up in the history of Home Assistant, through the **Notification** entity.
+- An `icon_url` has a random token and works without login, so a display can download it. Home Assistant keeps the last 64 images, in memory.
 
-| Field | |
-| --- | --- |
-| Device | A KDE Connect device found on your network |
-| Host | Only when the device is not found: its IP address or hostname |
+### Replace ring and screen lock
 
-Per device afterwards (**Change device settings**, or the device on the sidebar page):
+These don't work on every desktop, Cinnamon for example. A run command with one of these names takes over the built-in function:
 
-| Field | |
-| --- | --- |
-| MAC address | Needed for Wake-on-LAN. Leave empty to hide the *Wake up* button |
-| Scripts the device can run | These scripts show up under *Run command* in KDE Connect on the device |
-
-## Entities
-
-Per paired device:
-
-| Entity | |
-| --- | --- |
-| `binary_sensor` Connected | Device is connected |
-| `lock` Screen | Lock/unlock the screen, shows lock state |
-| `notify` | Send a notification |
-| `media_player` Media | What plays on the device (Spotify, a browser, …): play/pause, next/previous, seek, choose the player, and set or mute the system volume |
-| `remote` Remote | Keys, text and mouse actions, like the remote in the KDE Connect app. `turn_on` wakes the device (needs a MAC address) |
-| `text` Keyboard | Types whatever you enter on the device |
-| `image` Screen | The last screenshot of the device (see [Screen](#screen)) |
-| `button` Ring | Find-my-device sound |
-| `button` Wake up | Wake-on-LAN (needs a MAC address) |
-| `button` per run command | Runs the commands configured in KDE Connect on the device |
-
-Home Assistant scripts can be shared with a device and then show up under *Run command* in KDE Connect. The sidebar page lets you manage each device later: run and add commands, share scripts, set the MAC address, or remove it.
+- `Ring` or `Laten rinkelen`
+- `Lock screen` or `Scherm vergrendelen`
+- `Unlock screen` or `Scherm ontgrendelen`
 
 ## Actions
 
-The integration adds no actions of its own. Use the standard ones on its entities:
+The integration adds no actions, triggers, or conditions of its own. Use the standard actions on its entities:
 
-| Action | |
-| --- | --- |
-| `notify.send_message` | Shows a notification on the device |
-| `text.set_value` | Types the text on the device |
-| `remote.send_command` | Sends keys, text and mouse actions (see [Remote](#remote)) |
-| `remote.turn_on` | Wakes the device with Wake-on-LAN |
-| `lock.lock` / `lock.unlock` | Locks or unlocks the screen |
-| `button.press` | Rings the device, wakes it, or runs a run command |
-| `media_player.*` | Play/pause, next/previous, seek, volume, mute and choosing the player |
+- `notify.send_message`: shows a notification.
+- `text.set_value`: types text on the device.
+- `lock.lock` and `lock.unlock`: lock or unlock the screen.
+- `button.press`: rings the device, wakes it, or runs a command.
+- `media_player.*`: playback, seek, volume, mute, and `select_source` to choose the player.
+- `remote.turn_on`: wakes the device.
+- `remote.send_command`: sends one or more commands, with optional `num_repeats` and `delay_secs`.
 
-An action on a device that is not connected fails with "*device* is not connected to Home Assistant".
+Commands for `remote.send_command`:
 
-## Remote
+- `up`, `down`, `left`, `right`, `select`, `back`, `home`, `close`: the buttons of the remote in the KDE Connect app. `home` is the Super key, `close` is Alt+F4.
+- `enter`, `escape`, `tab`, `backspace`, `delete`, `page_up`, `page_down`, `home_key`, `end`, `super`, `f1` to `f12`: single keys.
+- `a`, `7`, `?`: any single character.
+- `ctrl+c`, `alt+f4`, `ctrl+shift+t`: combinations with `ctrl`, `alt`, `shift`, and `super`.
+- `text:Hello`: types text.
+- `click`, `double_click`, `right_click`, `middle_click`: mouse buttons.
+- `android_back`, `android_home`, `android_recents`: Android buttons.
+- `scroll_up`, `scroll_down`, `scroll_left`, `scroll_right`: scroll a step. `scroll_down:120` scrolls further.
+- `move:50,0`: moves the pointer by `dx,dy`.
 
-On the sidebar page, the **Remote** button of a device opens a remote with arrow buttons, a touchpad to move the mouse (tap to click) and a field to type text.
+An action on a device that is not connected fails with "_device_ is not connected to Home Assistant".
 
-The remote sends keys and mouse actions the way the KDE Connect app does, so it works with the normal KDE Connect app on the device:
+## Examples
 
-| Device | Works |
-| --- | --- |
-| Linux (KDE Plasma, Plasma Bigscreen, GNOME with GSConnect, X11 desktops) | Keys, text and mouse |
-| Windows, macOS | Keys, text and mouse |
-| Android, Android TV | Clicks, scrolling and `android_back` / `android_home` / `android_recents`; keys only while the KDE Connect keyboard is active |
-
-The first time, the device may ask for permission: on Plasma and GNOME (Wayland) a "remote control" prompt, on macOS the Accessibility permission, on Android the KDE Connect accessibility service.
-
-Use `remote.send_command` with one or more commands:
-
-| Commands | |
-| --- | --- |
-| `up` `down` `left` `right` `select` `back` `home` `close` | The buttons of the remote in the KDE Connect app (`home` is the Super key, `close` is Alt+F4) |
-| `enter` `escape` `tab` `backspace` `delete` `page_up` `page_down` `home_key` `end` `f1` … `f12` `super` | Single keys |
-| `a`, `7`, `?` | Any single character |
-| `ctrl+c`, `alt+f4`, `ctrl+shift+t`, `super+e` | Combinations with `ctrl`, `alt`, `shift` and `super` |
-| `text:Hello` | Types text |
-| `click` `double_click` `right_click` `middle_click` | Mouse buttons |
-| `scroll_up` `scroll_down` `scroll_left` `scroll_right` | Scroll a step; `scroll_down:120` scrolls further |
-| `move:dx,dy` | Moves the pointer, for example `move:50,0` |
-
-A remote on a dashboard, as buttons that call the remote:
-
-```yaml
-type: grid
-columns: 3
-square: false
-cards:
-  - type: button
-    icon: mdi:home
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: home}}
-  - type: button
-    icon: mdi:arrow-up
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: up}}
-  - type: button
-    icon: mdi:arrow-left-top
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: back}}
-  - type: button
-    icon: mdi:arrow-left
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: left}}
-  - type: button
-    icon: mdi:checkbox-blank-circle-outline
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: select}}
-  - type: button
-    icon: mdi:arrow-right
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: right}}
-  - type: button
-    icon: mdi:chevron-double-up
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: scroll_up}}
-  - type: button
-    icon: mdi:arrow-down
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: down}}
-  - type: button
-    icon: mdi:chevron-double-down
-    tap_action: {action: perform-action, perform_action: remote.send_command, target: {entity_id: remote.htpc_remote}, data: {command: scroll_down}}
-```
-
-## Screen
-
-Home Assistant can show what is on a computer's screen, as a screenshot you refresh (not live video). The computer takes the screenshot with a run command and sends it through KDE Connect:
-
-1. On the sidebar page, open the device's **Remote** and pick its desktop under **Screen**. The page then shows the run command to add, with Home Assistant's id filled in. It only uses the screenshot tool that comes with the desktop, so nothing has to be installed:
-   - KDE Plasma: `spectacle -b -n -f -o /tmp/home-assistant-screen.png && kdeconnect-cli -d <id> --share /tmp/home-assistant-screen.png`
-   - Cinnamon (Linux Mint): `gnome-screenshot -f /tmp/home-assistant-screen.png && kdeconnect-cli -d <id> --share /tmp/home-assistant-screen.png`
-
-   GNOME, Xfce, MATE, Windows and macOS are not supported yet. On the computer, open KDE Connect > *Run command* and add the line as a command named **Screenshot** (or *Schermafbeelding*).
-2. Open the device's **Remote** on the sidebar page and select **Refresh**, or press the *Screenshot* button entity. The picture shows up on the page and in the `image` entity.
-
-Only pictures (PNG, JPEG, WebP, up to 25 MB) are kept, and only the latest one, in memory.
-
-## Tips
-
-- **Not sure which commands to use?** On a computer's page, select **Help me make buttons**. Pick your Linux distribution and the buttons you want; the page writes a prompt for any AI chat. The answer can include a file to load with *Import* under *Run commands* in KDE Connect (this replaces the commands already there).
-- **Ring or screen lock not working?** They don't on every desktop (Cinnamon, for example). A run command named **Lock screen**, **Unlock screen** or **Ring** (or Dutch: *Scherm vergrendelen*, *Scherm ontgrendelen*, *Laten rinkelen*) takes over that button and the lock entity.
-
-## Troubleshooting
-
-- **No "KDE for Home Assistant" in the sidebar?** The page is only shown to administrators. Restart Home Assistant after installing, and reload the browser page. If it is still missing, open **Settings > Devices & services > KDE for Home Assistant** and check for an error there.
-- **"Could not open the KDE Connect network ports"?** Another program uses port 1716, usually the older [bartv2/kde_connect](https://github.com/bartv2/kde_connect) integration. Open **Settings > Repairs** and choose to disable or remove it; KDE for Home Assistant then starts by itself. On version 1.0.0, disable or remove the *KDE Connect* integration under **Settings > Devices & services** and restart Home Assistant.
-- **Asked to pick an area for some devices?** Those are the computers and phones that are paired, for example the ones taken over from the older integration. Pick a room, or skip it.
-- **Devices show the wrong name for Home Assistant?** Change it on the sidebar page under *Settings*, or with **Configure** on the integration. Version 1.0.0 suggested the old name ("HomeAssistant") when taking over pairings.
-
-## Example
-
-Wake a PC, wait for it to connect, unlock it:
+Wake a computer, wait for it to connect, and unlock it:
 
 ```yaml
 sequence:
@@ -204,10 +182,63 @@ sequence:
       entity_id: lock.my_pc_screen
 ```
 
-## Removal
+Show a notification on your phone when the front door opens:
 
-- **One device:** on the sidebar page, open the device and select **Remove**. This also removes the pairing on the device. Deleting it under **Settings > Devices & services > KDE for Home Assistant** removes it from Home Assistant only; select *Unpair* in KDE Connect on the device as well.
-- **The whole integration:** go to **Settings > Devices & services > KDE for Home Assistant**, open the menu (⋮) and select **Delete**. Then remove it in the Marketplace and restart Home Assistant. On your devices, Home Assistant stays in the KDE Connect list until you select *Unpair* there.
+```yaml
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.front_door
+    to: "on"
+actions:
+  - action: notify.send_message
+    target:
+      entity_id: notify.my_phone
+    data:
+      title: Front door
+      message: The front door just opened.
+```
+
+## Data updates
+
+Devices push changes to Home Assistant over the local network, so nothing is polled. While a device is disconnected, Home Assistant announces itself every 30 seconds so the device can connect again. A screenshot only updates when you request one.
+
+## Known limitations
+
+- Home Assistant cannot turn a device off, and `remote.turn_off` fails. Use a run command instead.
+- The screen is a screenshot, not live video. It works on KDE Plasma and Cinnamon only. GNOME, Xfce, MATE, Windows, and macOS are not supported yet.
+- Home Assistant accepts only pictures that a device shares (PNG, JPEG, or WebP, up to 25 MB). It keeps only the latest one, in memory.
+- Album art shows when the player shares a web address for it, a local picture (PNG, JPEG, or WebP, up to 5 MB), or the picture itself.
+- Wake-on-LAN must be turned on for the device itself. It uses IPv4, and so does finding the MAC address of a device, so neither works on a network with only IPv6.
+
+## Troubleshooting
+
+### KDE for Home Assistant is missing from the sidebar
+
+The page is shown to administrators only. Restart Home Assistant after installing and reload the browser page. If it is still missing, check for an error under **Settings** > **Devices & services** > **KDE for Home Assistant**.
+
+### "Could not open the KDE Connect network ports"
+
+Another program uses port 1716, usually the older [bartv2/kde_connect](https://github.com/bartv2/kde_connect) integration. Go to **Settings** > **Repairs** and choose to disable or remove it. KDE for Home Assistant then starts by itself.
+
+### The device does not connect
+
+Check that KDE Connect is running on the device, and that the device can reach Home Assistant on TCP ports 1716-1764. If the device is not found, enter its address under **Host**.
+
+### A repair says a device is no longer paired
+
+The device removed its pairing. Delete the device from the integration and pair it again.
+
+If you report a problem, add the diagnostics from the integration's menu to [a new issue](https://github.com/Radeaus/kdeforhomeassistant/issues). Certificates, keys, and MAC addresses are left out.
+
+## Removing the integration
+
+To remove one device, open it on the sidebar page and select **Remove**. This also removes the pairing on the device. If you delete it under **Settings** > **Devices & services** instead, also select **Unpair** in KDE Connect on the device.
+
+To remove the whole integration:
+
+1. Go to **Settings** > **Devices & services** > **KDE for Home Assistant**, open the menu (⋮), and select **Delete**.
+2. Remove it in the Marketplace and restart Home Assistant.
+3. On each device, select **Unpair** in KDE Connect. Home Assistant stays in the list until you do.
 
 ## Credits
 
